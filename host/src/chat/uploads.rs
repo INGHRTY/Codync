@@ -95,6 +95,19 @@ pub fn prompt_suffix(paths: &[PathBuf]) -> String {
     format!("\n\n[Attached files — read them from these paths]\n{}", list.join("\n"))
 }
 
+/// The files a bot on another computer's gateway was sent: it can't open them, so it is told what they are.
+pub fn remote_suffix(names: &[&str]) -> String {
+    let names: Vec<&str> = names.iter().copied().filter(|n| !n.is_empty()).collect();
+    if names.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\n[Attached files: {}. They are on the user's computer, which you can't reach — say so if you need to \
+         read them]",
+        names.join(", ")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

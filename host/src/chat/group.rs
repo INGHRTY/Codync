@@ -395,7 +395,7 @@ fn line(hub: &Hub, group: &BotConfig, e: &Entry, me: &BotConfig) -> String {
         return format!(
             "User: {}{}{reacted}",
             reply.unwrap_or_default(),
-            crate::chat::prompt::of_message(&hub.store, &me.skills, &root, text, attachments)
+            crate::chat::prompt::of_message(&hub.store, &me.skills, &root, text, attachments, me.connection.is_some())
         );
     }
     let author = e.data["author"].as_str().unwrap_or_default();
