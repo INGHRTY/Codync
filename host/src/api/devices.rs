@@ -78,6 +78,11 @@ const LOCAL_ONLY: &[&str] = &[
     "networkRecover",
     // Who may write to this computer's bots is decided at the computer, like who is in.
     "setNetworkRules",
+    // A gateway's key is entered at the computer, never from a phone.
+    "listConnections",
+    "saveConnection",
+    "testConnection",
+    "deleteConnection",
 ];
 const SCREEN: &[&str] = &["screenPrepare", "screenOffer", "screenClose", "screenTakeover"];
 

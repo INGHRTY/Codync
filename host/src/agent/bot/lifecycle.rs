@@ -56,7 +56,7 @@ impl Actor {
             return;
         }
         let release = plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now());
-        let leader = conn.acp.pid();
+        let leader = conn.pid();
         if release == Release::Nothing || background_work(leader).await {
             return;
         }
@@ -64,7 +64,7 @@ impl Actor {
             Release::Agent => {
                 tracing::info!(bot = %self.cfg.id, "stopping an idle agent");
                 if let Some(conn) = self.conn.take() {
-                    conn.acp.kill().await;
+                    conn.kill().await;
                 }
             }
             Release::Sessions(sessions) => {
@@ -96,10 +96,10 @@ impl Actor {
             return;
         }
         let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
-        if alone && !background_work(conn.acp.pid()).await {
+        if alone && !background_work(conn.pid()).await {
             tracing::info!(bot = %self.cfg.id, "stopping the agent after its routine run");
             if let Some(conn) = self.conn.take() {
-                conn.acp.kill().await;
+                conn.kill().await;
             }
         } else {
             self.close_reloadable(sid).await;

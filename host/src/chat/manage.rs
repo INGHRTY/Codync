@@ -150,7 +150,7 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     body["skills"] = json!(source.skills);
     body["createdBy"] = source.id.clone().into();
     let cfg = crate::agent::new_bot::with_defaults(hub, body).await?;
-    crate::hub::validate(&cfg)?;
+    crate::hub::validate(&hub.store, &cfg)?;
     fields.insert("backend".into(), cfg.backend.clone().into());
     let name = cfg.name.clone();
     approve(hub, source, format!("Create bot {name}"), describe(&fields, &lines)).await?;

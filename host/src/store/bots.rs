@@ -177,6 +177,8 @@ mod tests {
             skills: vec![],
             computer: false,
             manage_team: false,
+            connection: None,
+            hermes_profile: None,
             offered_to_network: true,
             reachable_by_assistants: true,
             created_by: None,

@@ -24,8 +24,9 @@ impl Actor {
     }
 
     /// The prompt for `text` in session `sid`: what the agent should hear first (its profile, a handoff, a memory
-    /// change) and after (a profile update, how to share files).
-    async fn compose(&mut self, sid: &str, text: &str) -> Result<String> {
+    /// change) and after (a profile update, how to share files). A gateway turn's instructions travel beside the
+    /// message as its system prompt, so they come back with the prompt.
+    async fn compose(&mut self, sid: &str, text: &str) -> Result<(String, String)> {
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         let mut snapshot = self.snapshot(sid).await?;
         // Sessions whose frozen instructions predate send_file or artifacts hear about them each turn.
@@ -58,6 +59,9 @@ impl Actor {
             snapshot.announced = snapshot.system_identity.clone();
             prompt = format!("<bot-profile>\n{PROFILE_AGAIN}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         }
+        // A gateway has no session-level system prompt: its turn carries the instructions itself.
+        let system =
+            if self.conn.as_ref().is_some_and(Conn::is_gateway) { snapshot.system.clone() } else { String::new() };
         if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
@@ -69,7 +73,7 @@ impl Actor {
         if remind_artifacts && own_chat {
             prompt.push_str("\n\n[Codync: for a report, plan, tracker or dashboard the user will come back to, write one self-contained HTML file and publish_artifact(path, title) instead of a long message. To change it, edit a copy of its HTML (list_artifacts) and publish_artifact(path, artifact: its id).]");
         }
-        Ok(prompt)
+        Ok((prompt, system))
     }
 
     /// Starts a turn in `lane` for the given user entries (none for a hidden turn).
@@ -206,21 +210,28 @@ impl Actor {
             tokio::time::sleep(Duration::from_millis(400)).await;
         }
         if let Some(conn) = self.conn.as_mut() {
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
+            while let Some(Incoming::Request { id, .. }) = conn.try_recv() {
+                let _ = conn.respond_error(id, -32601, "not supported").await;
             }
         }
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
-        let prompt =
-            if std::mem::take(&mut self.raw_prompt) { text.to_owned() } else { self.compose(&sid, text).await? };
+        let (prompt, system) = if std::mem::take(&mut self.raw_prompt) {
+            (text.to_owned(), String::new())
+        } else {
+            self.compose(&sid, text).await?
+        };
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
-        let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
-        let params = json!({
+        let mut params = json!({
             "sessionId": sid,
             "prompt": [{"type": "text", "text": prompt}],
         });
+        if !system.is_empty() {
+            // Hermes' `system_message` field, which every turn of a gateway bot carries.
+            params["instructions"] = system.into();
+        }
+        if let Some(model) = self.cfg.model.as_deref().filter(|_| self.cfg.connection.is_some()) {
+            params["model"] = model.into();
+        }
         if let Some(id) = &self.active_routine {
             self.hub.routines.mark_started(&self.hub.store, id)?;
             self.set_inflight(true);
@@ -228,7 +239,8 @@ impl Actor {
         // From here what changes in its memory folders is the bot's, however it changed them.
         memory::turns::begin_turn(&self.cfg.id, &sid, self.hub.runtime(&self.cfg.id).message);
         // Written before this returns, so a Stop right after is sent after the prompt.
-        let answer = acp.send("session/prompt", params).await?;
+        let answer =
+            self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?.send("session/prompt", params).await?;
         if !self.turn_memory_revision.is_empty()
             && let Err(error) = memory::mark_announced(&self.hub.store, &self.cfg.id, &sid, &self.turn_memory_revision)
         {

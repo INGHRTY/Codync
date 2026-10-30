@@ -1,14 +1,14 @@
 //! The agent process: which commands start it, the ACP handshake, the bot's model, and how its instructions are
 //! attached to a session request.
 
-use super::{Adapter, Conn, SessionCaps};
+use super::{Adapter, Conn};
 use crate::agent::acp::{self, Acp};
 use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
-use std::time::{Duration, Instant};
+use std::collections::BTreeMap;
+use std::time::Duration;
 
 /// ACP's `systemPrompt`: the bot's instructions added to the agent's own.
 pub(crate) fn system_prompt(system: &str) -> Value {
@@ -49,27 +49,31 @@ pub(crate) fn launch_commands(cfg: &BotConfig) -> Result<Vec<Candidate>> {
 /// Switches a session (`session/new` or `session/load` answered `res`) to the bot's
 /// chosen model, then sets that model's options (effort, fast…). Returns the answer holding
 /// the session's config options now: a model can change them.
-pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Value> {
+pub(crate) async fn select_model(conn: &mut Conn, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Value> {
     let selected = cfg.model.as_deref().filter(|m| !m.is_empty());
     let (model, options) = model_choice(res, selected.unwrap_or("Default"), &cfg.model_options);
-    let set = |id: &str, value: &str| {
-        acp.request("session/set_config_option", json!({"sessionId": sid, "configId": id, "value": value}))
-    };
+    let set = |id: &str, value: &str| json!({"sessionId": sid, "configId": id, "value": value});
     let mut current = res.clone();
     if selected.is_some() {
         if let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) {
-            let answer = set(config_id, model).await.map_err(|e| model_error(model, &e))?;
+            let answer = conn
+                .request("session/set_config_option", set(config_id, model))
+                .await
+                .map_err(|e| model_error(model, &e))?;
             if answer["configOptions"].is_array() {
                 current = answer;
             }
         } else {
-            acp.request("session/set_model", json!({"sessionId": sid, "modelId": model}))
+            conn.request("session/set_model", json!({"sessionId": sid, "modelId": model}))
                 .await
                 .map_err(|e| model_error(model, &e))?;
         }
     }
     for (id, value) in options {
-        let answer = set(id, value).await.map_err(|e| model_error(&format!("{model} with {id}={value}"), &e))?;
+        let answer = conn
+            .request("session/set_config_option", set(id, value))
+            .await
+            .map_err(|e| model_error(&format!("{model} with {id}={value}"), &e))?;
         if answer["configOptions"].is_array() {
             current = answer;
         }
@@ -146,27 +150,10 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
             return Err(acp::Failure::error(acp::FailureKind::Timeout, message));
         }
     };
-    let sessions = SessionCaps {
-        load: init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false),
-        close: init["agentCapabilities"]["sessionCapabilities"]["close"].is_object(),
-        system_prompt: init["agentCapabilities"]["sessionCapabilities"]["systemPrompt"].is_object(),
-        additional_directories: init["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"].is_object(),
-    };
-    Ok(Conn {
-        acp,
-        rx,
-        sessions,
-        adapter: adapter(&init),
-        loaded: HashMap::new(),
-        started: Instant::now(),
-        opening: false,
-        fast_options: HashMap::new(),
-        reports_compaction: false,
-        usage: HashMap::new(),
-    })
+    Ok(Conn::acp(acp, rx, &init))
 }
 
-fn adapter(init: &Value) -> Adapter {
+pub(super) fn adapter(init: &Value) -> Adapter {
     if init["agentCapabilities"]["_meta"]["claudeCode"].is_object() {
         Adapter::Claude
     } else if init["agentInfo"]["name"].as_str().is_some_and(|name| name.ends_with("codex-acp")) {

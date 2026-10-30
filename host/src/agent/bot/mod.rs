@@ -18,9 +18,11 @@
 
 mod cmd;
 mod compaction;
+mod conn;
 mod fallback;
 mod fast_mode;
 mod files;
+mod gateway;
 mod launch;
 mod lifecycle;
 mod queue;
@@ -31,9 +33,10 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::Queued;
+pub(crate) use conn::{Adapter, Conn, Instructions};
 pub(crate) use launch::{launch_commands, select_model, start_agent, system_prompt};
 
-use crate::agent::acp::{self, Acp, Incoming};
+use crate::agent::acp::{self, Incoming};
 use crate::agent::config::FastModeSupport;
 use crate::chat::context::{Identity, Snapshot};
 use crate::chat::group::GroupTurn;
@@ -131,74 +134,6 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     };
     let task = tokio::spawn(actor.run(rx, interrupted));
     BotHandle { tx, task }
-}
-
-/// What the agent can do with sessions besides creating them.
-// Each flag is one capability the agent advertised at `initialize`, independent of the others.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Clone, Copy)]
-struct SessionCaps {
-    /// `session/load`: resume a session after a restart.
-    load: bool,
-    /// `session/close`: an idle session can be released while the agent keeps running.
-    close: bool,
-    /// ACP `systemPrompt`: instructions on `session/new` and `load` that the agent keeps at system level.
-    system_prompt: bool,
-    /// ACP `additionalDirectories`: folders outside `cwd` the agent may work in, here the memory folders.
-    additional_directories: bool,
-}
-
-/// How the bot's instructions (identity and memory) reach the agent.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Instructions {
-    /// Claude's adapter: `_meta.systemPrompt`, swapped in by loading the session again.
-    ClaudeMeta,
-    /// ACP `systemPrompt` (append), which the agent keeps across compaction.
-    SystemPrompt,
-    /// A `<bot-profile>` block before the first message, sent again after a compaction.
-    FirstMessage,
-}
-
-/// Which adapter answered `initialize`, where Codync treats it apart from the others.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Adapter {
-    /// claude-agent-acp: takes `_meta.systemPrompt` and `_meta.claudeCode.options`, and `/compact <instructions>`.
-    Claude,
-    /// codex-acp: `/compact` (its keep-list is in `CODEX_CONFIG`).
-    Codex,
-    Other,
-}
-
-pub(crate) struct Conn {
-    pub(crate) acp: Arc<Acp>,
-    pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
-    sessions: SessionCaps,
-    pub(crate) adapter: Adapter,
-    /// Sessions already created or loaded in this process, and when each was last used.
-    loaded: HashMap<String, Instant>,
-    started: Instant,
-    /// A `session/new` or `session/load` is waiting for its answer. Still set when a routine's time limit cut it short:
-    /// the agent may then open that session, tools and all, under an id the host never learns (`drop_unanswered`).
-    opening: bool,
-    /// Each live session's Fast mode option, as the agent last listed it.
-    fast_options: HashMap<String, Value>,
-    /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
-    reports_compaction: bool,
-    /// Each session's context use and window size at its last `usage_update`.
-    usage: HashMap<String, (u64, u64)>,
-}
-
-impl Conn {
-    pub(crate) fn instructions(&self) -> Instructions {
-        // Claude's adapter rebuilds the standard field without the `_meta` object's options, so Claude stays on it.
-        if self.adapter == Adapter::Claude {
-            Instructions::ClaudeMeta
-        } else if self.sessions.system_prompt {
-            Instructions::SystemPrompt
-        } else {
-            Instructions::FirstMessage
-        }
-    }
 }
 
 /// What came of the bot's `react` on the user's message this turn.
@@ -344,7 +279,7 @@ impl Actor {
                 inc = recv_incoming(&mut self.conn) => self.on_incoming(inc).await,
                 Some(done) = done_rx.recv() => {
                     // Updates sent before the prompt response are already queued; apply them first.
-                    while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
+                    while let Some(inc) = self.conn.as_mut().and_then(Conn::try_recv) {
                         self.on_incoming(Some(inc)).await;
                     }
                     if let Err(error) = &done && self.fall_back(error, &done_tx).await {
@@ -370,12 +305,12 @@ impl Actor {
                     if self.active_routine.is_some() && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
                         self.stop_requested = true;
-                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                        if let Some(c) = self.conn.take() { c.kill().await; }
                     }
                     // The agent ignored the cancel: stop its process so the bot is free again.
                     if self.turn.is_some() && self.cancel_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                         self.cancel_deadline = None;
-                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                        if let Some(c) = self.conn.take() { c.kill().await; }
                     }
                     self.release_idle().await;
                     // The idle check may have queued a compaction.
@@ -390,7 +325,7 @@ impl Actor {
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
         if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
+            c.kill().await;
         }
     }
 
@@ -445,7 +380,7 @@ fn inflight_key(bot_id: &str) -> String {
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {
     match conn {
-        Some(c) => c.rx.recv().await,
+        Some(c) => c.recv().await,
         None => std::future::pending().await,
     }
 }

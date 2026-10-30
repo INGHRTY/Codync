@@ -12,6 +12,12 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     b["id"] = "".into();
     // Only the host makes the lead (`chat::lead`).
     b["lead"] = false.into();
+    // Connectors and skills are this computer's (MCP servers on loopback, files here): a bot on another computer's
+    // gateway reaches neither, so it starts with none.
+    if b["connection"].is_string() {
+        b["connectors"] = json!([]);
+        b["skills"] = json!([]);
+    }
     // Connectors are on for a new bot unless the client picked them.
     // Without a credential store (headless Linux) no connector can run, so the bot starts with none.
     if b["connectors"].is_null() && b["kind"] != "group" {
@@ -29,6 +35,10 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     // Skills too: every installed one is on unless the client picked them, but a bot's skill stays with that bot.
     if b["skills"].is_null() && b["kind"] != "group" {
         b["skills"] = json!(market::Installed::Skills.ids(&hub.store)?);
+    }
+    // A bot on another computer's Hermes gateway is a Hermes bot there, whatever the client says.
+    if b["connection"].is_string() {
+        b["backend"] = "hermes".into();
     }
     // And the agent, when the client names none.
     if b["backend"].as_str().is_none_or(str::is_empty) && b["kind"] != "group" {

@@ -237,7 +237,7 @@ impl Hub {
             }
         }
         crate::agent::fallback::tidy(&mut cfg);
-        validate(&cfg)?;
+        validate(&self.store, &cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
         {
             let _g = self.emit_lock.locked();
@@ -280,7 +280,7 @@ impl Hub {
             cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
         }
         crate::agent::fallback::tidy(&mut cfg);
-        validate(&cfg)?;
+        validate(&self.store, &cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
         crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
         {

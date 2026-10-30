@@ -46,12 +46,10 @@ impl Actor {
                 }
             }
             Some(Incoming::Request { id, method, params }) => {
-                let Some(conn) = &self.conn else { return };
-                let acp = conn.acp.clone();
                 if method == "session/request_permission" && self.turn.is_some() {
                     self.on_permission(id, params).await;
-                } else {
-                    let _ = acp.respond_error(id, -32601, &format!("{method} is not supported by Codync")).await;
+                } else if let Some(conn) = &self.conn {
+                    let _ = conn.respond_error(id, -32601, &format!("{method} is not supported by Codync")).await;
                 }
             }
         }
@@ -160,10 +158,8 @@ impl Actor {
                 .find_map(|k| options.iter().find(|o| o["kind"] == *k))
                 .or_else(|| options.first());
             if let (Some(o), Some(conn)) = (pick, &self.conn) {
-                let _ = conn
-                    .acp
-                    .respond(rpc_id, json!({"outcome": {"outcome": "selected", "optionId": o["optionId"]}}))
-                    .await;
+                let _ =
+                    conn.respond(rpc_id, json!({"outcome": {"outcome": "selected", "optionId": o["optionId"]}})).await;
                 return;
             }
         }
@@ -256,7 +252,7 @@ impl Actor {
                     None => json!({"outcome": {"outcome": "cancelled"}}),
                 };
                 if let Some(conn) = &self.conn {
-                    let _ = conn.acp.respond(rpc_id, outcome).await;
+                    let _ = conn.respond(rpc_id, outcome).await;
                 }
             }
             Answer::Codync(reply) => {

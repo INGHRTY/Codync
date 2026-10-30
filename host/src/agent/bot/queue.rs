@@ -78,6 +78,8 @@ impl Actor {
                 let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.load);
                 let restart = cfg.backend != self.cfg.backend
+                    || cfg.connection != self.cfg.connection
+                    || cfg.hermes_profile != self.cfg.hermes_profile
                     || cfg.command != self.cfg.command
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
@@ -158,7 +160,7 @@ impl Actor {
             self.answer_permission(&id, None).await;
         }
         if let (Some(c), Some(sid)) = (&self.conn, &self.turn_session) {
-            let _ = c.acp.notify("session/cancel", json!({"sessionId": sid})).await;
+            let _ = c.notify("session/cancel", json!({"sessionId": sid})).await;
         }
     }
 
@@ -166,7 +168,7 @@ impl Actor {
     async fn restart_agent(&mut self) {
         self.files.cancel();
         if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
+            c.kill().await;
         }
         for slot in self.run_slots() {
             self.set_session(Some(&slot), None);

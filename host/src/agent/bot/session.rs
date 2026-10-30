@@ -148,7 +148,13 @@ impl Actor {
             && self.conn.as_ref().is_some_and(|c| c.sessions.load)
             && let Some(c) = self.conn.take()
         {
-            c.acp.kill().await;
+            c.kill().await;
+        }
+        // A bot on another computer's Hermes gateway: its profile there, over HTTP.
+        if self.conn.is_none() && self.cfg.connection.is_some() {
+            self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Connecting to the Hermes gateway…".into());
+            let gateway = super::gateway::Gateway::connect(&self.hub, &self.cfg).await?;
+            self.conn = Some(Conn::gateway(gateway));
         }
         if self.conn.is_none() {
             let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
@@ -216,17 +222,15 @@ impl Actor {
             let res = self.session_request("session/load", params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
             // The agent replays history as session/update before answering; drop it.
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
+            while let Some(Incoming::Request { id, .. }) = conn.try_recv() {
+                let _ = conn.respond_error(id, -32601, "not supported").await;
             }
             match res {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
                     let res = if res.get("configOptions").is_some() || res.get("models").is_some() {
-                        select_model(&conn.acp, &res, &sid, &self.cfg).await?
+                        select_model(conn, &res, &sid, &self.cfg).await?
                     } else {
                         res
                     };
@@ -263,7 +267,7 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
-        let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        let options = select_model(conn, &res, &sid, &self.cfg).await?;
         self.note_options(&sid, &options, Listing::Session);
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;
@@ -280,13 +284,13 @@ impl Actor {
     pub(super) async fn session_request(&mut self, method: &str, params: Value) -> Result<Value> {
         let conn = self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?;
         conn.opening = matches!(method, "session/new" | "session/load");
-        let answered = tokio::time::timeout(SESSION_TIMEOUT, conn.acp.request(method, params)).await;
+        let answered = tokio::time::timeout(SESSION_TIMEOUT, conn.request(method, params)).await;
         conn.opening = false;
         if let Ok(result) = answered {
             return result;
         }
         if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
+            c.kill().await;
         }
         let message = format!("the agent didn't answer {method} within {}s", SESSION_TIMEOUT.as_secs());
         Err(acp::Failure::error(acp::FailureKind::Timeout, message))
@@ -306,7 +310,7 @@ impl Actor {
             return;
         }
         if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
+            c.kill().await;
         }
     }
 
