@@ -31,4 +31,12 @@ public extension Entry {
         let turn = runningTurn(entries, working: true)
         return entries.filter { $0.turn == turn && $0.isWorkingStep }
     }
+
+    /// The running turn's plan, for the tray above the composer: its turn and its steps.
+    static func runningPlan(_ entries: [Entry]) -> (turn: Int64, steps: [PlanItem])? {
+        guard let turn = runningTurn(entries, working: true),
+              let steps = entries.first(where: { $0.turn == turn && $0.kind == "plan" })?.data.entries,
+              !steps.isEmpty else { return nil }
+        return (turn, steps)
+    }
 }

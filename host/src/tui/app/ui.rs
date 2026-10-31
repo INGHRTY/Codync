@@ -388,6 +388,8 @@ pub enum Click {
     Composer,
     /// The working line: unfolds or folds the turn's steps.
     Steps,
+    /// The plan tray above the composer: folds or unfolds the running turn's plan.
+    Plan,
     /// A bot-message row (entry id): opens the conversation.
     BotChat(String),
 }

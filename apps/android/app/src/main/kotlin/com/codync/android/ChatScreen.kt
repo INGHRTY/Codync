@@ -113,9 +113,17 @@ import com.kyant.shapes.Capsule
             val mismatch = state.mismatch
             if (mismatch != null) UpdateNeededCard(state, mismatch, store::requestHostUpdate, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
             // An artifact's viewer has its own box for the same draft; two would overwrite each other.
-            else if (viewing == null) MessageComposer(bot, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
-                onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null,
-                replyTo = replyTo, cancelReply = { replyId = null })
+            else if (viewing == null) {
+                // The running turn's plan floats over the box its answer will come from.
+                if (bot.isWorking(bot.id) && state.connection is LinkState.Ready) {
+                    runningPlan(state.entries.filter { it.botId == bot.id })?.let { (turn, steps) ->
+                        PlanTray(turn, steps) { store.showTrace(true) }
+                    }
+                }
+                MessageComposer(bot, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
+                    onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null,
+                    replyTo = replyTo, cancelReply = { replyId = null })
+            }
         }
     }) {
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,

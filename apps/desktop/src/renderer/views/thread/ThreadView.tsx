@@ -20,10 +20,11 @@ import { ChatRow, TimeSeparator } from './ChatRows'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
+import { PlanTray } from './PlanTray'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
 import { TraceView } from './TraceView'
-import { workingSteps } from './trace-turns'
+import { runningPlan, workingSteps } from './trace-turns'
 import { useReading } from './reading'
 import { GroupEditorView } from '../bots/GroupEditorView'
 import { BotTemplateView } from '../bots/BotTemplateView'
@@ -118,6 +119,11 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
     [toggleDetails],
   )
 
+  // The running turn's plan floats above the composer while the bot works.
+  const working = !!bot && isWorkingIn(bot, botId) && !store.isOffline
+  const entries = store.allEntries(botId)
+  const plan = useMemo(() => (working ? runningPlan(entries) : undefined), [working, entries])
+
   const openTrace = useCallback(() => setShowTrace(true), [])
   const openArtifact = useCallback((id: string) => {
     setArtifactId(id)
@@ -184,6 +190,8 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
         <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
+          {/* The plan over the box the bot's answer will come from; an update card or an artifact takes its place. */}
+          {plan && !store.mismatch && !artifactId ? <PlanTray turn={plan.turn} steps={plan.steps} openTrace={openTrace} /> : null}
           {store.mismatch ? (
             <div className="composer-update-needed">
               <UpdateNeededCard />

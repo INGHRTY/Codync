@@ -33,6 +33,8 @@ data class Entry(
     val status: String? get() = data.text("status")
     /** Files the bot shared in this message. */
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
+    /** A plan entry's steps: what the agent means to do, and where each one stands. */
+    val plan: List<PlanStep> get() = data["entries"]?.let { runCatching { WireJson.decodeFromJsonElement<List<PlanStep>>(it) }.getOrNull() }.orEmpty()
     /** The artifact a bot published in this message (an artifact card), read leniently: its text stands in for it. */
     val artifact: ArtifactCard? get() = (data["artifact"] as? JsonObject)?.let { runCatching { WireJson.decodeFromJsonElement<ArtifactCard>(it) }.getOrNull() }
     /** Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a
@@ -80,6 +82,10 @@ data class Entry(
         }
     }
 }
+
+/** One step of a plan (`Entry.plan`): `pending`, `in_progress` or `completed`. */
+@Serializable
+data class PlanStep(val content: String, val status: String = "pending", val priority: String? = null)
 
 const val MAX_FILE_BYTES = 100L * 1024 * 1024
 

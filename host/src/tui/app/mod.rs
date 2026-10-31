@@ -91,6 +91,8 @@ pub struct App {
     pub trace_turn: Option<i64>,
     /// The bot and turn whose working steps are unfolded.
     pub steps_open: Option<(String, i64)>,
+    /// The bot and turn whose plan tray above the composer is folded.
+    pub plan_folded: Option<(String, i64)>,
     pub compact: bool,
     pub overlays: Vec<Overlay>,
     pub toasts: Vec<Toast>,
@@ -171,6 +173,7 @@ impl App {
             trace: TraceMode::Off,
             trace_turn: None,
             steps_open: None,
+            plan_folded: None,
             compact: false,
             overlays: vec![],
             toasts: vec![],

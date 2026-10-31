@@ -83,6 +83,14 @@ summaries shown (`--thinking-display summarized`, through `claudeCode.options.ex
 `agent/bot/launch.rs`). Whether Claude thinks stays the user's Claude Code setting; when it does, a
 short thought's summary arrives in one piece when the thinking ends, a long one's in parts.
 
+The running turn's own todo list floats above the composer in a **plan tray**, whatever the thinking
+details setting: the header says **Plan** and how many steps are done (`1/4`), each step shows as
+pending, in progress or completed (struck through), and the tray leaves with the turn. A tap (click)
+on its header opens the turn's Full conversation, its chevron folds the steps away, and its close
+button hides the tray for that turn only. A new turn's plan shows again. On the terminal the tray
+sits above the composer with up to six steps (`… N more` past them), and a click on its header folds
+it; it has no close, as a click outside the roster toggles the one thing there is to toggle.
+
 Full conversation remains available through a message's Show what it did (its touch-and-hold
 menu on the iPhone and Android, its actions on the desktop). It contains narration, all
 thoughts, tools and previous turns, and follows new steps until the reader scrolls up.

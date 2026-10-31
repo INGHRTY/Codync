@@ -42,6 +42,10 @@ public struct ThreadView: View {
                         .padding(.bottom, 8)
                         .transition(.opacity)
                 } else {
+                    // The running turn's plan floats over the box its answer will come from.
+                    if working, let plan = Entry.runningPlan(model.chat(botId)) {
+                        PlanTray(turn: plan.turn, steps: plan.steps) { showTrace = true }
+                    }
                     Composer(botId: botId, replyingTo: $replyingTo,
                              onCall: !calling && bot != nil ? { calling = true } : nil,
                              onInterrupt: callSpeaking ? interruptCall : nil)

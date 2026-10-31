@@ -85,9 +85,17 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     // The message it replies to, then attached files: a row each above the text.
     let quote = app.replying_to().map(Entry::quoted);
     let qh = u16::from(quote.is_some());
-    let files = app.draft_files();
-    let fh = u16::from(!files.is_empty());
+    let names: Vec<String> = app
+        .draft_files()
+        .iter()
+        .map(|p| format!("▤ {}", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()))
+        .collect();
+    let fh = u16::from(!names.is_empty());
     let box_top = r.bottom().saturating_sub(ch + qh + fh + 2);
+    // The running turn's plan floats just above the composer (the apps' PlanTray).
+    let plan = app.plan_tray(&b);
+    let open = plan.as_ref().is_some_and(|(turn, _)| app.plan_folded.as_ref() != Some(&(b.id.clone(), *turn)));
+    let tray_top = draw_plan(buf, app, plan.as_ref(), open, box_top, r);
     let typing = app.typing && app.overlays.is_empty();
     let rule = if typing { t.text } else { t.line };
     hline(buf, r.x, box_top, r.width, rule);
@@ -107,10 +115,6 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         rput(buf, r.right() - 1, box_top + 1, hint, t.dim);
     }
     if fh > 0 {
-        let names: Vec<String> = files
-            .iter()
-            .map(|p| format!("▤ {}", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()))
-            .collect();
         let hint = if draft.text.is_empty() { "⌫ removes" } else { "" };
         let row = box_top + qh + 1;
         put(buf, r.x + 3, row, r.width.saturating_sub(u(w(hint)) + 6), &names.join("  "), t.secondary);
@@ -173,7 +177,7 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     }
 
     // Transcript.
-    let body = Rect::new(r.x, top + 1, r.width, box_top.saturating_sub(top + 1));
+    let body = Rect::new(r.x, top + 1, r.width, tray_top.saturating_sub(top + 1));
     app.chat_height = usize::from(body.height);
     let built = build_chat(app, &b, usize::from(body.width.saturating_sub(1)));
     let total = built.lines.len();
@@ -208,11 +212,68 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     }
     if app.chat_scroll > 0 {
         let s = format!(" ↓ {} more ", app.chat_scroll);
-        rput(buf, r.right() - 1, box_top.saturating_sub(1), &s, t.btn);
+        rput(buf, r.right() - 1, tray_top.saturating_sub(1), &s, t.btn);
     }
     if typing {
         command_menu(buf, body, app);
     }
+}
+
+/// The running turn's plan above the composer: a header (a click folds it) and up to six steps.
+/// Returns the row the transcript may fill down to; the composer stays where it is.
+fn draw_plan(
+    buf: &mut Buffer,
+    app: &mut App,
+    plan: Option<&(i64, Vec<(String, String)>)>,
+    open: bool,
+    box_top: u16,
+    r: Rect,
+) -> u16 {
+    /// More than this and the tray would cover the chat.
+    const STEPS: usize = 6;
+    let t = theme();
+    let Some((_, steps)) = plan else { return box_top };
+    let shown = if open { steps.len().min(STEPS) } else { 0 };
+    let more = steps.len() - shown;
+    // A blank row between the tray and the composer's rule.
+    let h = 1 + (u16::from(open) * (u(shown) + u16::from(more > 0))) + 1;
+    let top = box_top.saturating_sub(h);
+    let y = top + 1;
+    fill(buf, Rect::new(r.x, y, r.width, h - 1), t.panel);
+    let done = steps.iter().filter(|(s, _)| s == "completed").count();
+    put(
+        buf,
+        r.x + 2,
+        y,
+        r.width.saturating_sub(4),
+        &format!("{} plan {done}/{}", if open { "▾" } else { "▸" }, steps.len()),
+        t.secondary,
+    );
+    app.hits.clicks.push((Rect::new(r.x, y, r.width, 1), Click::Plan));
+    if open {
+        for (i, (status, content)) in steps.iter().take(shown).enumerate() {
+            let (g, s) = match status.as_str() {
+                "completed" => ("✓", t.green),
+                "in_progress" => ("▸", t.bold),
+                _ => ("☐", t.dim),
+            };
+            let row = y + 1 + u(i);
+            let room = r.width.saturating_sub(8);
+            put(buf, r.x + 4, row, 2, g, s);
+            put(
+                buf,
+                r.x + 6,
+                row,
+                room,
+                &truncate(content, usize::from(room)),
+                if *status == "completed" { t.dim } else { t.secondary },
+            );
+        }
+        if more > 0 {
+            put(buf, r.x + 6, y + 1 + u(shown), r.width.saturating_sub(8), &format!("… {more} more"), t.dim);
+        }
+    }
+    top
 }
 
 /// The `/` list over the bottom of the transcript: the commands matching what's typed, the

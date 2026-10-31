@@ -418,6 +418,7 @@ impl App {
                     }
                     Some(Click::Composer) => self.start_typing(),
                     Some(Click::Steps) => self.toggle_steps(),
+                    Some(Click::Plan) => self.toggle_plan(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
                     None => {
                         if self.overlays.is_empty() {
