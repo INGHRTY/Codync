@@ -182,9 +182,10 @@ whenever the window was narrower than 760+sidebar; both are gone, and the window
 `WINDOW_MIN_WIDTH` (the 48 rail, its 1-point drag edge and the chat's 424) in
 `apps/desktop/src/shared/layout.ts`, so the layout holds from the smallest window up. Grok's own dark
 surfaces measured `#121212` for the conversation pane with agent bubbles a 6–10% white tint over it;
-Codync keeps its own dark pair (a solid light user bubble, the agent a tint) as the table asks. Not
-verified: the plan tray on a real running turn (the demo story carries no plan), and the iPhone/Android
-rendering (Android cannot be built on this machine).
+Codync keeps its own dark pair (a solid light user bubble, the agent a tint) as the table asks. The plan
+tray was seen as well, in the built demo given a temporary working turn and a four-step plan: it floats 640
+wide above the composer with the turn's progress, folds to its header, dismisses, and strikes through the
+finished steps. Not verified: the iPhone/Android rendering (Android cannot be built on this machine).
 
 ### Phase 6 — Hermes adaptation
 
