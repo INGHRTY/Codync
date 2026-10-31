@@ -27,9 +27,12 @@
   --removed: #c62828;
   /* Floating menus and account panel. */
   --panel: #fafafa;
-  /* The Mac chat's bubbles (a step stronger than the iPhone's). */
+  /* The conversation's own bubbles, apart from the chips that reuse --bubble-user. The user's own
+     messages are the only solid bubble, so the eye lands on what was said to the bot. (kit chatUser) */
   --chat-agent: #eeeeee;
-  --chat-user: #e2e2e2;
+  --chat-user: #1c1c1c;
+  --on-chat-user: #ffffff;
+  --secondary-on-chat-user: #b4b4b4;
   /* Floating transcript controls (chevrons, Jump to latest, inspector actions). */
   --chat-button: #eeeeee;
   /* Light: the message box is the page color; dark: a lighter fill. */
@@ -123,7 +126,9 @@
     --removed: #f0a7a7;
     --panel: #1b1b1b;
     --chat-agent: #262626;
-    --chat-user: #363636;
+    --chat-user: #f2f2f2;
+    --on-chat-user: #141414;
+    --secondary-on-chat-user: #5a5a5a;
     --chat-button: #303030;
     --composer-fill: #2f2f2f;
     --chrome-fill: #181818;

@@ -107,6 +107,8 @@ struct AuthorLabel: View {
 /// The message a reply quotes, as its first line without Markdown markers.
 struct QuoteLine: View {
     let text: String
+    /// Drawn on the user's solid bubble, where the page's secondary grey is too dark to read.
+    var onSolid = false
 
     var body: some View {
         Label {
@@ -115,7 +117,7 @@ struct QuoteLine: View {
             Image(systemName: "text.bubble")
         }
         .font(.subheadline)
-        .foregroundStyle(Palette.secondary)
+        .foregroundStyle(onSolid ? Palette.secondaryOnChatUser : Palette.secondary)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Replying to \(text)")
     }
@@ -141,17 +143,17 @@ struct UserBubble: View {
 
     private var text: some View {
             VStack(alignment: .leading, spacing: 4) {
-                if let quote = entry.data.replyTo { QuoteLine(text: quote.text) }
+                if let quote = entry.data.replyTo { QuoteLine(text: quote.text, onSolid: true) }
                 if let text = entry.data.text, !text.isEmpty {
                     Text(text)
                         .font(.body)
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(Palette.onChatUser)
                         .textSelection(.enabled)
                 }
             }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(Palette.chatUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .contextActions(reactions: model.reactionPick(entry)) {
                     var items = [MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) }]
                     if let reply { items.append(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply)) }

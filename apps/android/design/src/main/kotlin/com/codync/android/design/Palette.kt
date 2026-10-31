@@ -22,6 +22,13 @@ object Palette {
     val surface: Color @Composable @ReadOnlyComposable get() = pair(0xF4F4F4, 0x141414)
     val bubbleAgent: Color @Composable @ReadOnlyComposable get() = pair(0xF0F0F0, 0x1C1C1C)
     val bubbleUser: Color @Composable @ReadOnlyComposable get() = pair(0xE2E2E2, 0x363636)
+    /** The chat's own fill, apart from the chips that reuse [bubbleUser]: the user's messages are the only
+     *  solid bubble in the conversation, so the eye lands on what was said to the bot. */
+    val chatUser: Color @Composable @ReadOnlyComposable get() = pair(0x1C1C1C, 0xF2F2F2)
+    /** Text on [chatUser]: the ink's opposite, readable in both schemes. */
+    val onChatUser: Color @Composable @ReadOnlyComposable get() = pair(0xFFFFFF, 0x141414)
+    /** Muted text on [chatUser] (a quoted line, a timestamp). */
+    val secondaryOnChatUser: Color @Composable @ReadOnlyComposable get() = pair(0xB4B4B4, 0x5A5A5A)
     val border: Color @Composable @ReadOnlyComposable get() = pair(0xE6E6E6, 0x262626)
     val text: Color @Composable @ReadOnlyComposable get() = pair(0x141414, 0xF2F2F2)
     val secondary: Color @Composable @ReadOnlyComposable get() = pair(0x6B6B6B, 0x9A9A9A)

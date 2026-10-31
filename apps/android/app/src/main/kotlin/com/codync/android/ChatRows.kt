@@ -188,7 +188,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, state, store)
         val quote = entry.replyTo
-        if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
+        if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.chatUser)
             .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
                 messageMenu(context, entry, reply, null)
             }) { UserText(entry.text, quote) }
@@ -197,17 +197,18 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 }
 
 @Composable private fun UserText(text: String, quote: ReplyQuote? = null) {
-    Column(Modifier.background(Palette.bubbleUser).padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (quote != null) QuoteLine(quote.text)
-        if (text.isNotEmpty()) Text(text, style = Type.body, color = Palette.text)
+    Column(Modifier.background(Palette.chatUser).padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (quote != null) QuoteLine(quote.text, onSolid = true)
+        if (text.isNotEmpty()) Text(text, style = Type.body, color = Palette.onChatUser)
     }
 }
 
 /** The message a reply quotes, as its first line without Markdown markers: in its bubble, and in the composer while replying. */
-@Composable internal fun QuoteLine(text: String, modifier: Modifier = Modifier) {
+@Composable internal fun QuoteLine(text: String, modifier: Modifier = Modifier, onSolid: Boolean = false) {
+    val tint = if (onSolid) Palette.secondaryOnChatUser else Palette.secondary
     Row(modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Symbol("text.bubble", size = 14.dp, tint = Palette.secondary)
-        Text("“${messagePreview(text)}”", style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Symbol("text.bubble", size = 14.dp, tint = tint)
+        Text("“${messagePreview(text)}”", style = Type.subheadline, color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

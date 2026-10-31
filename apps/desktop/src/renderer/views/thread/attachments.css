@@ -35,7 +35,8 @@
 }
 .attachment-file {
   padding: 8px 12px;
-  background: var(--bubble-user);
+  background: var(--chat-user);
+  color: var(--on-chat-user);
   border-radius: var(--radius-l);
 }
 .attachment-file-name {

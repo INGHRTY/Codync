@@ -77,8 +77,9 @@ struct CallConversationView: View {
         switch message.speaker {
         case .user:
             Text(message.text)
+                .foregroundStyle(Palette.onChatUser)
                 .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(Palette.chatUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.leading, 40)
         case .voice:

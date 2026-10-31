@@ -51,7 +51,8 @@
   border-radius: 18px;
 }
 .welcome-bubble.user {
-  background: var(--bubble-user);
+  background: var(--chat-user);
+  color: var(--on-chat-user);
 }
 .welcome-bubble.agent {
   background: var(--bubble-agent);

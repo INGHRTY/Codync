@@ -42,10 +42,10 @@ export function AttachmentList({ attachments, botId }: { attachments: Attachment
           </button>
         ) : (
           <HStack key={file.id} gap={8} className="attachment-file">
-            <Icon name={attachmentSymbol(file.name)} size={16} color="var(--secondary)" />
+            <Icon name={attachmentSymbol(file.name)} size={16} color="var(--secondary-on-chat-user)" />
             <VStack gap={1} shrink>
-              <Text size="subheadline" tone="text" truncate className="attachment-file-name">{file.name}</Text>
-              <Text size="caption2" tone="tertiary">{byteCount(file.size)}</Text>
+              <Text size="subheadline" truncate className="attachment-file-name" style={{ color: 'var(--on-chat-user)' }}>{file.name}</Text>
+              <Text size="caption2" style={{ color: 'var(--secondary-on-chat-user)' }}>{byteCount(file.size)}</Text>
             </VStack>
           </HStack>
         ),

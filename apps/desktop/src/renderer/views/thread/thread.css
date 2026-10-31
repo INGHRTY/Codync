@@ -255,7 +255,7 @@
 }
 .bubble.user {
   background: var(--chat-user);
-  color: var(--text);
+  color: var(--on-chat-user);
   font-size: var(--conversation);
   line-height: 1.5;
   white-space: pre-wrap;

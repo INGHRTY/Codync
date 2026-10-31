@@ -115,7 +115,7 @@ private struct ChatGlimpse: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.tr("Fix the flaky login test"))
-                .bubble(Palette.bubbleUser)
+                .bubble(Palette.chatUser, ink: Palette.onChatUser)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .rise(shown)
 
@@ -158,9 +158,9 @@ struct DemoButton: View {
 }
 
 private extension View {
-    func bubble(_ fill: Color) -> some View {
+    func bubble(_ fill: Color, ink: Color = Palette.text) -> some View {
         font(.subheadline)
-            .foregroundStyle(Palette.text)
+            .foregroundStyle(ink)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background(fill, in: RoundedRectangle(cornerRadius: 18))

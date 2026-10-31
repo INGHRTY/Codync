@@ -118,21 +118,21 @@ struct AttachmentList: View {
         HStack(spacing: 8) {
             Image(systemName: AttachmentIcon.symbol(file.name))
                 .font(.system(size: 16))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(Palette.secondaryOnChatUser)
             VStack(alignment: .leading, spacing: 1) {
                 Text(file.name)
                     .font(.subheadline)
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(Palette.onChatUser)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file))
                     .font(.caption2)
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(Palette.secondaryOnChatUser)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Palette.chatUser, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }

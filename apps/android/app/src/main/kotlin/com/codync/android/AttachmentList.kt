@@ -68,12 +68,12 @@ import kotlinx.coroutines.withContext
 }
 
 @Composable private fun AttachmentCard(file: Attachment) {
-    Row(Modifier.clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser).semantics(mergeDescendants = true) { }
+    Row(Modifier.clip(RoundedRectangle(16.dp)).background(Palette.chatUser).semantics(mergeDescendants = true) { }
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Symbol(AttachmentIcon.symbol(file.name), size = 19.dp, tint = Palette.secondary)
+        Symbol(AttachmentIcon.symbol(file.name), size = 19.dp, tint = Palette.secondaryOnChatUser)
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(file.name, style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
-            Text(formatBytes(file.size), style = Type.caption2, color = Palette.tertiary)
+            Text(file.name, style = Type.subheadline, color = Palette.onChatUser, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
+            Text(formatBytes(file.size), style = Type.caption2, color = Palette.secondaryOnChatUser)
         }
     }
 }
