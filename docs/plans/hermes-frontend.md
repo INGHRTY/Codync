@@ -57,11 +57,10 @@ writing belong to the host's connection setup, not to the user.
 
 ## Consequences
 
-- **Remote bots get no Codync MCP tools in v1.** `chat`, `team`, `memory`, `manage`, `routines`, `computer`
-  are loopback stdio servers on this computer; the VPS can't reach them. Remote bots therefore don't call
-  `send_message`, share files or publish artifacts on their own. Room replies, @-mentions, approvals, stop and
-  push all still work, because the host drives those. Parity comes in Phase 6 through an MCP bridge over
-  `codync-network`.
+- **Remote bots' Codync tools** (landed in Phase 6) are the same servers over HTTP instead of stdio:
+  `POST /mcp/<bot>` on this computer accepts one MCP message, authorized by a token for that bot alone
+  (`mcp::bridge`, the bot's own MCP profile entry points at it). `chat`, `team`, `routines` and `memory`
+  travel; `computer`, `connectors` and `composio` stay here, since each runs something on this computer.
 - **Remote bots have no fallback chain in v1** (`fallbacks` must stay empty; the editor hides the section).
 - **A remote bot can't be the lead bot** in v1.
 - **Group attachments:** images travel as `image_url` data parts; other files are named in the room prompt as
@@ -180,14 +179,23 @@ See [Grok Bot deltas](#grok-bot-deltas). Every item lands in iOS, Android, deskt
 - Never call `session/close` (Hermes advertises no `close` capability); absolute paths only (no
   `additionalDirectories`).
 - Usage: show "not supported" when Hermes reports no rate-limit meta.
-- MCP bridge over `codync-network` so remote bots get `chat`/`memory`/`team`.
+- MCP bridge so remote bots get `chat`/`memory`/`team`.
 
 Landed against the local Hermes 0.22.5 (2026-10-31): the per-bot profile (`agent/hermes_profile.rs`, verified by
 a bot starting as `hermes -p codync-… acp` with its own `memories` folder), `shared` dropping Hermes, the
 approval policy (`edit_approval_policy` → `session` for a bot that never asks), the model through
 `session/set_config_option` (Hermes lists `model` in `configOptions`), no `session/close` or
-`additionalDirectories` (Hermes advertises neither, and the host already follows the capabilities), and the
-Usage list saying Hermes reports none. The MCP bridge is still open.
+`additionalDirectories` (Hermes advertises neither, and the host already follows the capabilities), the Usage
+list saying Hermes reports none, and the bridge.
+
+The bridge went over the host's own HTTP server, not `codync-network`: `POST /mcp/<bot>` takes one MCP message
+and answers it (`mcp::bridge`), authorized by a token minted for that bot. The gateway's profile gets it as
+`mcp_servers.codync` (url + `Authorization: Bearer ${MCP_CODYNC_API_KEY}`), written by
+`hermes::provision` over the connection's SSH host, with the token in the profile's `.env`: the address is
+first probed from the gateway's computer, so one it can't reach is never written. Verified on the user's VPS
+(Hermes 0.22.2): the profile was created and written on connect, and its bot then called
+`mcp__codync__list_routines` and listed all 22 tools. The gateway reconciles a profile's servers with its
+config while running, so a profile written during a turn gets its tools a turn or so later, with no restart.
 
 ### Phase 7 — Release
 

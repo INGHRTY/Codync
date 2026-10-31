@@ -42,29 +42,31 @@ impl Answer {
 
 impl Gateway {
     /// Connects to the profile `cfg` runs as, so a wrong key or a gateway that's down fails before a turn waits.
-    pub(super) async fn connect(hub: &Arc<Hub>, cfg: &crate::store::BotConfig) -> Result<Self> {
+    /// `Some` beside it is something the chat should say: the bot's Codync tools couldn't be set up there.
+    pub(super) async fn connect(hub: &Arc<Hub>, cfg: &crate::store::BotConfig) -> Result<(Self, Option<String>)> {
         let store = &hub.store;
         let id = cfg.connection.as_deref().ok_or_else(|| anyhow!("this bot has no Hermes connection"))?;
         let connection = hermes::connections::get(store, id).ok_or_else(|| anyhow!("unknown Hermes connection"))?;
         let profile = hermes::profile_of(cfg);
-        // One profile per bot, made on the gateway the first time it's needed (or its key saved by the user). Its
-        // key lives in the vault, which this needs open.
+        // One profile per bot, made on the gateway the first time it's needed (or its key saved by the user), with
+        // the bot's Codync tools. Its key lives in the vault, which this needs open.
         crate::market::vault::unlock(hub.clone()).await?;
-        hermes::provision::ensure(store, &connection, &profile).await?;
+        let warning = hermes::provision::ensure(hub, &connection, &profile, &cfg.id).await?;
         let client = hermes::connections::client(store, &connection, Some(&profile))?;
         client
             .capabilities()
             .await
             .with_context(|| format!("the Hermes gateway on {} (profile `{profile}`)", connection.name))?;
         let (tx, rx) = mpsc::unbounded_channel();
-        Ok(Self {
+        let gateway = Self {
             client,
             title: cfg.name.trim().to_owned(),
             rx,
             tx,
             run: Arc::new(Mutex::new(None)),
             stopping: Arc::new(AtomicBool::new(false)),
-        })
+        };
+        Ok((gateway, warning))
     }
 
     /// The bot's profile on the gateway.

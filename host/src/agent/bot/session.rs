@@ -175,8 +175,11 @@ impl Actor {
         // A bot on another computer's Hermes gateway: its profile there, over HTTP.
         if self.conn.is_none() && self.cfg.connection.is_some() {
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Connecting to the Hermes gateway…".into());
-            let gateway = super::gateway::Gateway::connect(&self.hub, &self.cfg).await?;
+            let (gateway, warning) = super::gateway::Gateway::connect(&self.hub, &self.cfg).await?;
             self.conn = Some(Conn::gateway(gateway));
+            if let Some(warning) = warning {
+                self.notice(&warning, NoticeStyle::Error);
+            }
         }
         if self.conn.is_none() {
             let (hub, id) = (self.hub.clone(), self.cfg.id.clone());

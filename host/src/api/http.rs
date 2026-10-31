@@ -28,6 +28,8 @@ pub fn router(hub: Arc<Hub>) -> Router {
         .route("/hooks/routines/{id}", post(routine_hook))
         .route("/events", get(events))
         .route("/api/{method}", post(command))
+        // A bot's tools for an agent on another computer (a Hermes gateway's): its own token, not this computer's.
+        .route("/mcp/{bot}", post(mcp_bridge))
         .route("/term/{id}", get(term_stream))
         .route("/ingest/statusline", post(statusline))
         .route("/channel", get(channel))
@@ -132,6 +134,27 @@ async fn command(
         let (status, message) = error_status(&e);
         ApiError(status, message)
     })
+}
+
+/// `POST /mcp/<bot>`: one MCP message from the bot's agent on another computer, answered as JSON. The bot's bridge
+/// token authorizes it from anywhere (a gateway's address, not this computer's loopback), and only for that bot.
+async fn mcp_bridge(State(hub): State<Arc<Hub>>, Path(bot): Path<String>, headers: HeaderMap, body: Bytes) -> Response {
+    let given = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or_default();
+    if !crate::mcp::bridge::authorized(&hub, &bot, given) {
+        return unauthorized().into_response();
+    }
+    let Ok(msg) = serde_json::from_slice::<Value>(&body) else {
+        return ApiError(StatusCode::BAD_REQUEST, "invalid JSON".into()).into_response();
+    };
+    match crate::mcp::bridge::handle(&hub, &bot, &msg).await {
+        Some(reply) => (StatusCode::OK, Json(reply)).into_response(),
+        // A notification: accepted, nothing to say.
+        None => StatusCode::ACCEPTED.into_response(),
+    }
 }
 
 #[derive(Deserialize)]
