@@ -187,6 +187,13 @@ interface CreateTarget {
   computerId: string
 }
 
+/** The conversation's own minimum, and the rail the sidebar folds to when the window can't hold both. */
+const CHAT_MIN_WIDTH = 424
+const SIDEBAR_RAIL = 48
+/** Narrower than this by dragging, the sidebar folds to the rail. */
+const SIDEBAR_MIN = 140
+const SIDEBAR_MAX = 420
+
 function ChatSplitView() {
   const tr = useTr()
   const app = useApp()
@@ -216,7 +223,7 @@ function ChatSplitView() {
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(SIDEBAR_MIN, window.innerWidth - CHAT_MIN_WIDTH)))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -316,13 +323,13 @@ function ChatSplitView() {
     app.select(refs[next]!)
   }
 
-  // The sidebar's edge drags its width; narrower than 180 collapses it to the rail.
+  // The sidebar's edge drags its width; narrower than the minimum collapses it to the rail.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - 420)
+  const sidebarMax = Math.min(SIDEBAR_MAX, window.innerWidth - CHAT_MIN_WIDTH)
   const resizeSidebar = (proposed: number) => {
-    const nextCompact = proposed < 180
+    const nextCompact = proposed < SIDEBAR_MIN
     if (nextCompact !== compact) setCompact(nextCompact)
-    if (!nextCompact) setSidebarWidth(Math.min(Math.max(260, proposed), sidebarMax))
+    if (!nextCompact) setSidebarWidth(Math.min(Math.max(SIDEBAR_MIN, proposed), sidebarMax))
   }
 
   const errorMessage = app.errorMessage
@@ -357,11 +364,13 @@ function ChatSplitView() {
     )
   }
 
-  const width = compact ? 76 : sidebarWidth
+  // Grok's collapse: a window too narrow for the sidebar and the chat's own minimum shows the rail.
+  const railed = compact || windowSize.width < sidebarWidth + CHAT_MIN_WIDTH
+  const width = railed ? SIDEBAR_RAIL : sidebarWidth
   return (
     <div className={`split ${showAccount || contextBot ? 'covered' : ''}`}>
-      <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
-        <div className="sidebar-header drag" inert={compact}>
+      <aside className={`sidebar ${railed ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
+        <div className="sidebar-header drag" inert={railed}>
           <Spacer />
           <HStack gap={6} className="no-drag">
             <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
@@ -370,7 +379,7 @@ function ChatSplitView() {
           </HStack>
           <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
         </div>
-        {compact ? (
+        {railed ? (
           <div className="rail-header drag">
             <HStack align="stretch" justify="center" className="no-drag">
               <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
@@ -378,20 +387,20 @@ function ChatSplitView() {
           </div>
         ) : null}
         <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
-          {roster.grouped && !compact ? <ExtensionsMovedTip /> : null}
-          <BotRoster roster={roster} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} openExtensions={(id) => {
+          {roster.grouped && !railed ? <ExtensionsMovedTip /> : null}
+          <BotRoster roster={roster} compact={railed} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} openExtensions={(id) => {
             // Found it: the tip about where Extensions went has done its job.
             prefs.extensionsMovedTipSeen.set(true)
             setMarketplace(id)
           }} />
-          {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
+          {visibleRoster.length === 0 && !roster.grouped && !railed && mismatchStores.length === 0 ? (
             <div className="roster-empty">
               <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
               {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
             </div>
           ) : null}
         </div>
-        {compact ? (
+        {railed ? (
           <div className="rail-actions">
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
             <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
@@ -407,7 +416,7 @@ function ChatSplitView() {
           <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} />
         )}
       </aside>
-      <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
+      <ResizeHandle label="Resize sidebar" width={width} min={SIDEBAR_RAIL} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
@@ -415,7 +424,7 @@ function ChatSplitView() {
 
       {showAccount ? (
         <AccountPanelLayer
-          compact={compact}
+          compact={railed}
           approvals={app.approvals.length}
           onDismiss={() => setShowAccount(false)}
           onUsage={() => {

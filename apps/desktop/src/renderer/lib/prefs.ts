@@ -46,7 +46,10 @@ export function usePref<T>(p: Pref<T>): [T, (v: T) => void] {
 }
 
 export const TEXT_SIZES = [11, 12, 13, 14, 15, 16, 18]
-export const DEFAULT_TEXT_SIZE = 12
+/** The size everything but the conversation scales from, so an existing preference keeps its look. */
+export const BASE_TEXT_SIZE = 12
+/** Grok Bot's conversation reads at 14 px; the chrome stays on 12. */
+export const DEFAULT_TEXT_SIZE = 14
 
 /** The next larger (`up`) or smaller size for ⌘+ / ⌘−, staying at either end. */
 export function stepTextSize(size: number, up: boolean) {
@@ -56,7 +59,7 @@ export function stepTextSize(size: number, up: boolean) {
 export const prefs = {
   textSize: pref('conversationFontSize', DEFAULT_TEXT_SIZE),
   sidebarCompact: pref('sidebarCompact', false),
-  sidebarWidth: pref('desktopSidebarWidth', 266),
+  sidebarWidth: pref('desktopSidebarWidth', 180),
   detailsPanelWidth: pref('detailsPanelWidth', 400),
   hiddenComputers: pref('hiddenComputers', ''),
   computerOrder: pref<string[]>('computerOrder', []),
@@ -74,11 +77,13 @@ export const prefs = {
 /** The Mac preference supplies one scale for conversation text and app chrome. */
 export function applyTextSize(size: number) {
   const clamped = Number.isFinite(size) ? Math.min(Math.max(size, 11), 18) : DEFAULT_TEXT_SIZE
-  document.documentElement.style.setProperty('--scale', String(clamped / DEFAULT_TEXT_SIZE))
+  document.documentElement.style.setProperty('--scale', String(clamped / BASE_TEXT_SIZE))
   document.documentElement.style.setProperty('--conversation', `${clamped}px`)
   // Match the reference chat at the selected size; keep larger text an explicit preference.
   document.documentElement.style.setProperty('--chat', `${clamped}px`)
-  document.documentElement.style.setProperty('--chat-scale', String(clamped / DEFAULT_TEXT_SIZE))
+  document.documentElement.style.setProperty('--chat-scale', String(clamped / BASE_TEXT_SIZE))
+  // The readable column's own base is the default size: 640px at 14, the same measure below it.
+  document.documentElement.style.setProperty('--measure-scale', String(clamped / DEFAULT_TEXT_SIZE))
 }
 
 prefs.textSize.subscribe(() => applyTextSize(prefs.textSize.get()))

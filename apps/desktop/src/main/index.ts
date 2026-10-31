@@ -74,7 +74,8 @@ function openChat() {
   chat = new BrowserWindow({
     width: 1100,
     height: 760,
-    minWidth: 760,
+    // Narrow enough for the chat alone beside a narrow sidebar: the rail plus a 424px conversation.
+    minWidth: 424,
     minHeight: 500,
     title: app.getName(),
     show: false,
