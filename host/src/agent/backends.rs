@@ -202,7 +202,7 @@ pub async fn login_command(id: &str) -> anyhow::Result<String> {
 }
 
 /// Where this harness's CLI is installed: on `PATH`, or inside the `WorkBuddy` app.
-fn installed_cli(h: &Harness) -> Option<std::path::PathBuf> {
+pub(crate) fn installed_cli(h: &Harness) -> Option<std::path::PathBuf> {
     h.bins.iter().find_map(|b| which(b)).or_else(|| (h.id == "workbuddy").then(workbuddy::find).flatten())
 }
 

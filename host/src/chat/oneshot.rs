@@ -24,7 +24,10 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     let env = crate::agent::auth::launch_env(&hub.store, &cfg.backend)?;
     let mut conn = None;
     let mut last_err = None;
-    for candidate in crate::agent::bot::launch_commands(cfg)? {
+    // A Hermes bot's own profile, when this computer has it: the provider and skills it runs with. Never made here.
+    let profile = (cfg.backend == "hermes").then(|| crate::agent::hermes_profile::name(cfg));
+    let profile = profile.filter(|profile| crate::agent::hermes_profile::exists(profile));
+    for candidate in crate::agent::bot::launch_commands(cfg, profile.as_deref())? {
         let started = async {
             let mut command = [candidate.resolve(|_| {}).await?.acp()];
             let mut env = env.clone();

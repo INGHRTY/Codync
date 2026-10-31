@@ -1,8 +1,8 @@
 //! The bot's ACP sessions: starting its agent, new/load, routine runs' sessions.
 
 use super::fast_mode::Listing;
-use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
-use super::{Actor, Conn, Instructions};
+use super::launch::{apply_approval, claude_meta, launch_commands, select_model, start_agent, system_prompt};
+use super::{Actor, Conn, Instructions, NoticeStyle};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::agent::registry::Candidate;
@@ -124,6 +124,28 @@ impl Actor {
         })
     }
 
+    /// A local Hermes bot's own profile on this computer, made the first time it runs: its memory, skills and
+    /// settings, not the user's default profile's. `None` means Hermes runs it in the default profile, which the chat
+    /// says when that isn't the user's own command.
+    async fn hermes_profile(&self) -> Option<String> {
+        if self.cfg.backend != "hermes" || self.cfg.connection.is_some() || self.cfg.command.is_some() {
+            return None;
+        }
+        let profile = crate::agent::hermes_profile::name(&self.cfg);
+        if crate::agent::hermes_profile::exists(&profile) {
+            return Some(profile);
+        }
+        self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Creating the bot's Hermes profile…".into());
+        match crate::agent::hermes_profile::ensure(&self.cfg).await {
+            Ok(profile) => Some(profile),
+            Err(error) => {
+                tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't make the bot's Hermes profile");
+                self.notice(&format!("This bot runs in your default Hermes profile: {error:#}"), NoticeStyle::Error);
+                None
+            }
+        }
+    }
+
     /// `ensure_session` for the turn: a routine run's setup must end by its time limit, and setup cut short
     /// mustn't leave the agent opening a session the host never learns of.
     pub(super) async fn ensure_turn_session(&mut self, slot: Option<&str>) -> Result<()> {
@@ -162,7 +184,8 @@ impl Actor {
                 let msg = msg.to_owned();
                 hub.set_runtime(&id, |r| r.activity = msg);
             };
-            let candidates = launch_commands(&self.cfg)?;
+            let profile = self.hermes_profile().await;
+            let candidates = launch_commands(&self.cfg, profile.as_deref())?;
             // Keys saved from an "environment variable" sign-in, and what the harness needs to start.
             let mut env = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)?;
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
@@ -230,7 +253,8 @@ impl Actor {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
                     let res = if res.get("configOptions").is_some() || res.get("models").is_some() {
-                        select_model(conn, &res, &sid, &self.cfg).await?
+                        let res = select_model(conn, &res, &sid, &self.cfg).await?;
+                        apply_approval(conn, &res, &sid, &self.cfg).await
                     } else {
                         res
                     };
@@ -268,6 +292,7 @@ impl Actor {
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
         let options = select_model(conn, &res, &sid, &self.cfg).await?;
+        let options = apply_approval(conn, &options, &sid, &self.cfg).await;
         self.note_options(&sid, &options, Listing::Session);
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;

@@ -169,6 +169,19 @@ pub async fn refresh(hub: &Hub) {
     apply(hub, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
     apply(hub, joined(junie), "junie", "Junie", "JetBrains IDE");
     apply(hub, cursor_windows, "cursor", "Cursor", "Cursor");
+    apply(hub, hermes(hub), "hermes", "Hermes Agent", "ACP");
+}
+
+/// Hermes reports no rate limits over ACP. While a Hermes bot exists the list says so, instead of leaving the question
+/// open; with none it leaves the list, and a list that already matches isn't sent again.
+fn hermes(hub: &Hub) -> Option<Vec<Window>> {
+    let listed = hub.usage.locked().providers.iter().any(|p| p.id == "hermes");
+    let bot = hub.store.bots().ok()?.iter().any(|row| row.config.backend == "hermes");
+    match (bot, listed) {
+        (true, false) => Some(vec![Window::note("limits", "Rate limits", "Hermes reports none")]),
+        (false, true) => Some(Vec::new()),
+        _ => None,
+    }
 }
 
 fn joined(result: Result<Option<Vec<Window>>, tokio::task::JoinError>) -> Option<Vec<Window>> {

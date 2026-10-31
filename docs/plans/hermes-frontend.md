@@ -182,6 +182,13 @@ See [Grok Bot deltas](#grok-bot-deltas). Every item lands in iOS, Android, deskt
 - Usage: show "not supported" when Hermes reports no rate-limit meta.
 - MCP bridge over `codync-network` so remote bots get `chat`/`memory`/`team`.
 
+Landed against the local Hermes 0.22.5 (2026-10-31): the per-bot profile (`agent/hermes_profile.rs`, verified by
+a bot starting as `hermes -p codync-… acp` with its own `memories` folder), `shared` dropping Hermes, the
+approval policy (`edit_approval_policy` → `session` for a bot that never asks), the model through
+`session/set_config_option` (Hermes lists `model` in `configOptions`), no `session/close` or
+`additionalDirectories` (Hermes advertises neither, and the host already follows the capabilities), and the
+Usage list saying Hermes reports none. The MCP bridge is still open.
+
 ### Phase 7 — Release
 
 `2.31.0` (minor: new methods + additive bot fields; no `minApp` bump). `after-change` workflow, merge into
