@@ -18,7 +18,10 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
   `~/.codync/bots/<bot>/uploads/<uploadId>/<name>`. Only UUID ids and plain file names are accepted.
 - The agent gets the message text plus an "Attached files" list of absolute paths and reads them with
   its own tools (Claude and Codex read images too). The entry keeps `attachments: [{id, name, size}]`
-  for display.
+  for display. A bot on a Hermes gateway can't open this computer's files: its message carries the
+  images that fit (PNG, JPEG, GIF, WebP, up to 6 MiB per turn) as `image_url` data URLs — in its own
+  chat and in a room — and every other file, including an image over that budget, is only named,
+  which the bot is told it can't read.
 - Files don't go through the relay mailbox: while the computer is offline, a message with files
   waits in the composer's send button (disabled) instead. A failed send keeps its files on the device
   for Resend until the app quits.

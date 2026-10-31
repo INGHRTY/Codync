@@ -391,6 +391,50 @@ async fn a_late_answer_survives_newer_messages_and_sees_them() {
 }
 
 #[test]
+fn a_gateway_member_is_named_the_files_of_the_lines_the_turn_does_not_answer() {
+    let dir = std::env::temp_dir().join(format!("codync-group-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let group: BotConfig =
+        serde_json::from_value(json!({"id": "g", "kind": "group", "name": "Crew", "members": ["a", "b"]})).unwrap();
+    store.save_bot(&group).unwrap();
+    let member: BotConfig =
+        serde_json::from_value(json!({"id": "b", "name": "Bob", "backend": "claude", "cwd": dir, "connection": "vps"}))
+            .unwrap();
+    store.save_bot(&member).unwrap();
+    let hub = Hub::new(
+        store,
+        "line-test".into(),
+        crate::remote::identity::Identity::load_or_create(&dir).unwrap(),
+        "test".into(),
+        0,
+    );
+    let photo = Entry {
+        id: "e1".into(),
+        seq: 1,
+        bot_id: "g".into(),
+        rev: 1,
+        kind: "user".into(),
+        turn: 1,
+        data: json!({"text": "what is this?", "attachments": [{"id": uuid::Uuid::new_v4().to_string(), "name": "Photo.PNG"}]}),
+        created_at: 0,
+        updated_at: 0,
+    };
+    // The message the turn answers travels as images; the turn names what it can't carry.
+    assert_eq!(line(&hub, &group, &photo, &member, std::slice::from_ref(&photo.id)), "User: what is this?");
+    // An older line the turn doesn't answer is only named, so the member knows a photo was there.
+    let older = line(&hub, &group, &photo, &member, &[]);
+    assert!(older.contains("[Attached files: Photo.PNG."), "{older}");
+    assert!(!older.contains("read them from these paths"), "{older}");
+    // A member on this computer still reads it by path.
+    let mut local = member.clone();
+    local.connection = None;
+    let here = line(&hub, &group, &photo, &local, &[]);
+    assert!(here.contains("[Attached files — read them from these paths]"), "{here}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn pass_is_recognized_loosely() {
     for t in ["(pass)", " (pass) ", "\"(pass)\"", "pass.", ""] {
         assert!(is_pass(t), "{t:?}");

@@ -6,7 +6,7 @@
 //! run's last frame answers the prompt, and Stop and a card's answer go to `/v1/runs/{run}`.
 
 use crate::LockExt;
-use crate::agent::acp::{Failure, FailureKind, Incoming};
+use crate::agent::acp::{self, Failure, FailureKind, Incoming};
 use crate::hub::Hub;
 use crate::remote::hermes::events::Events;
 use crate::remote::hermes::{self, Client};
@@ -74,12 +74,13 @@ impl Gateway {
         &self.title
     }
 
-    /// Starts a turn and returns the answer that resolves when its run ends. `system` is the bot's instructions,
-    /// which every turn carries: a gateway session has no system prompt of its own.
+    /// Starts a turn and returns the answer that resolves when its run ends. `message` is Hermes' `message`
+    /// field ([`chat_message`]); `system` is the bot's instructions, which every turn carries, since a gateway
+    /// session has no system prompt of its own.
     pub(super) async fn send(
         &mut self,
         session: &str,
-        message: &str,
+        message: &Value,
         system: &str,
         model: Option<&str>,
     ) -> Result<Answer> {
@@ -156,6 +157,30 @@ impl Gateway {
     }
 }
 
+/// The turn's ACP prompt as Hermes' `message`: its text, and the images the turn carries as `image_url` data
+/// URLs (the only attachments a gateway takes in a request). A turn without images stays plain text.
+pub(super) fn chat_message(prompt: &Value) -> Value {
+    let text = acp::content_text(prompt);
+    let images: Vec<Value> = prompt
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|b| b["type"].as_str() == Some("image"))
+        .filter_map(|b| {
+            let data = b["data"].as_str().filter(|d| !d.is_empty())?;
+            let mime = b["mimeType"].as_str().unwrap_or("image/png");
+            Some(json!({"type": "image_url", "image_url": {"url": format!("data:{mime};base64,{data}")}}))
+        })
+        .collect();
+    if images.is_empty() {
+        return Value::String(text);
+    }
+    let mut parts = vec![json!({"type": "text", "text": text})];
+    parts.extend(images);
+    Value::Array(parts)
+}
+
 /// The answer a run's last frame gives the actor: ACP's `stopReason` in the shape it reads.
 fn terminal(event: &str, d: &Value) -> Result<Value> {
     let reason = match event {
@@ -203,6 +228,25 @@ mod tests {
         assert_eq!(terminal("run.completed", &json!({})).unwrap()["stopReason"], "end_turn");
         assert_eq!(terminal("run.cancelled", &json!({})).unwrap()["stopReason"], "cancelled");
         assert!(terminal("run.failed", &json!({"turn_exit_reason": "max_iterations_reached(60/60)"})).is_err());
+    }
+
+    #[test]
+    fn an_image_travels_in_the_message_and_text_alone_stays_plain() {
+        let words = json!([{"type": "text", "text": "what is this?"}]);
+        assert_eq!(chat_message(&words), json!("what is this?"));
+        let with_image = json!([
+            {"type": "text", "text": "what is this?"},
+            {"type": "image", "mimeType": "image/png", "data": "iVBORw=="},
+        ]);
+        assert_eq!(
+            chat_message(&with_image),
+            json!([
+                {"type": "text", "text": "what is this?"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw=="}},
+            ])
+        );
+        // An image with no data is left out rather than sent as an empty URL.
+        assert_eq!(chat_message(&json!([{"type": "image", "mimeType": "image/png", "data": ""}])), json!(""));
     }
 
     #[test]
@@ -292,7 +336,7 @@ mod tests {
         ])
         .await;
         let mut g = gateway(&base);
-        let answer = g.send("s1", "hi", "be brief", None).await.unwrap();
+        let answer = g.send("s1", &json!("hi"), "be brief", None).await.unwrap();
         assert_eq!(answer.response().await.unwrap()["stopReason"], "end_turn");
         let mut text = String::new();
         while let Ok(Incoming::Notification { params, .. }) = g.rx.try_recv() {
@@ -313,7 +357,10 @@ mod tests {
         ])
         .await;
         let mut g = gateway(&base);
-        assert_eq!(g.send("s1", "hi", "", None).await.unwrap().response().await.unwrap()["stopReason"], "end_turn");
+        assert_eq!(
+            g.send("s1", &json!("hi"), "", None).await.unwrap().response().await.unwrap()["stopReason"],
+            "end_turn"
+        );
     }
 
     #[tokio::test]
@@ -324,7 +371,7 @@ mod tests {
         ])
         .await;
         let mut g = gateway(&base);
-        let error = g.send("s1", "hi", "", None).await.unwrap().response().await.unwrap_err();
+        let error = g.send("s1", &json!("hi"), "", None).await.unwrap().response().await.unwrap_err();
         assert!(error.to_string().contains("max_iterations_reached"), "{error}");
     }
 
@@ -337,7 +384,7 @@ mod tests {
         ])
         .await;
         let mut g = gateway(&base);
-        g.send("s1", "hi", "", None).await.unwrap().response().await.unwrap();
+        g.send("s1", &json!("hi"), "", None).await.unwrap().response().await.unwrap();
         g.approve("run_1", "once").await.unwrap();
         g.stop().await.unwrap();
         let calls = calls.lock().unwrap().clone();

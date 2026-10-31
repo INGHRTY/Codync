@@ -1,5 +1,6 @@
 //! What a user message asks the agent: the note on the message it replies to, its text with a
-//! `/skill …` command expanded, then the paths of the files attached to it.
+//! `/skill …` command expanded, then the files attached to it — their paths here, or on a gateway
+//! their images in the turn and the names of what it can't carry.
 
 use crate::chat::{replies, uploads};
 use crate::hub::Hub;
@@ -7,36 +8,54 @@ use crate::store::{BotConfig, Store};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
+/// How the asked agent gets the message's files.
+#[derive(Clone, Copy)]
+pub enum Files {
+    /// On this computer: the agent reads them by path.
+    Here,
+    /// On another computer's Hermes gateway, for the message this turn answers: its images travel in
+    /// the turn itself ([`uploads::remote_plan`]), and the turn names the files it couldn't carry.
+    Images,
+    /// On another computer's Hermes gateway, for a room line this turn doesn't answer: only named.
+    Named,
+}
+
 /// `skills`: the asked bot's skills on. `root`: the chat's uploads (`uploads::root`; a group's
 /// own in a group). `attachments`: the message's `{id, name}` upload metadata, as saved in the chat.
-/// `remote`: the bot runs on another computer's Hermes gateway, which can't see these files.
 pub fn of_message(
     store: &Store,
     skills: &[String],
     root: &Path,
     text: &str,
     attachments: &[Value],
-    remote: bool,
+    files: Files,
 ) -> String {
     let asked = crate::market::expand_command(store, skills, text);
     let asked = asked.as_deref().unwrap_or(text);
-    let paths: Vec<PathBuf> = attachments.iter().filter_map(|meta| uploads::path_of(root, meta)).collect();
-    if paths.is_empty() {
-        return asked.to_owned();
-    }
-    if remote {
+    match files {
+        Files::Here => {
+            let paths: Vec<PathBuf> = attachments.iter().filter_map(|meta| uploads::path_of(root, meta)).collect();
+            if paths.is_empty() {
+                return asked.to_owned();
+            }
+            format!("{asked}{}", uploads::prompt_suffix(&paths))
+        }
+        // The turn itself carries this message's images and names the rest, so the line adds nothing.
+        Files::Images => asked.to_owned(),
         // The files sit on this computer; the agent on the gateway can't open them.
-        let names: Vec<&str> = attachments.iter().filter_map(|m| m["name"].as_str()).collect();
-        return format!("{asked}{}", uploads::remote_suffix(&names));
+        Files::Named => {
+            let names: Vec<String> = attachments.iter().filter_map(|m| m["name"].as_str()).map(str::to_owned).collect();
+            format!("{asked}{}", uploads::remote_suffix(&names))
+        }
     }
-    format!("{asked}{}", uploads::prompt_suffix(&paths))
 }
 
 /// What a user message in `bot`'s own chat (its saved `data`) asks the agent.
 pub fn of_entry(hub: &Hub, bot: &BotConfig, data: &Value) -> String {
     let text = data["text"].as_str().unwrap_or_default();
     let attachments = data["attachments"].as_array().map_or(&[][..], Vec::as_slice);
-    let asked = of_message(&hub.store, &bot.skills, &uploads::root(bot), text, attachments, bot.connection.is_some());
+    let files = if bot.connection.is_some() { Files::Images } else { Files::Here };
+    let asked = of_message(&hub.store, &bot.skills, &uploads::root(bot), text, attachments, files);
     match replies::note(hub, &bot.id, &data["replyTo"]) {
         Some(note) => format!("{note}\n{asked}"),
         None => asked,

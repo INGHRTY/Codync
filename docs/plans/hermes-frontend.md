@@ -1,6 +1,7 @@
 # Hermes frontend: cloud + local bots in one room
 
-Status: **Phases 1–2 done and verified live** against the user's VPS (2026-10-30). Phases 3–7 planned.
+Status: **Phases 1–4, 6 and 7 landed**, phases 1–2 verified live against the user's VPS (2026-10-30),
+gateway images against it (2026-10-31). Phase 5's Grok Bot side-by-side pass still needs an unlocked display.
 Decisions taken with the user on 2026-10-30.
 
 Codync becomes the front end for Hermes: bots that run on the user's own VPS (Hermes `api_server`) and bots
@@ -63,8 +64,10 @@ writing belong to the host's connection setup, not to the user.
   travel; `computer`, `connectors` and `composio` stay here, since each runs something on this computer.
 - **Remote bots have no fallback chain in v1** (`fallbacks` must stay empty; the editor hides the section).
 - **A remote bot can't be the lead bot** in v1.
-- **Group attachments:** images travel as `image_url` data parts; other files are named in the room prompt as
-  unavailable, with a notice, until an upload endpoint is verified.
+- **Attachments:** an image in the message (PNG, JPEG, GIF, WebP; up to 6 MiB per turn, since Hermes caps
+  a request at 10 MB and base64 adds a third) travels in the turn itself as an `image_url` data URL
+  (`uploads::remote_plan` / `image_blocks`, `gateway::chat_message`), in a bot's own chat and in a room.
+  Other files are named in the prompt as unavailable, with a notice.
 
 ## Model
 
@@ -197,6 +200,11 @@ first probed from the gateway's computer, so one it can't reach is never written
 `mcp__codync__list_routines` and listed all 22 tools. The gateway reconciles a profile's servers with its
 config while running, so a profile written during a turn gets its tools a turn or so later, with no restart.
 
+Attachments (2026-10-31): Hermes' `chat/stream` takes only `text` and `image_url` parts — a file part is refused
+with `unsupported_content_type` — so a gateway bot gets a message's images as `image_url` data URLs and is told
+the names of the rest. Verified on the VPS (0.22.2) with a 96×96 red-and-white PNG: its log shows
+`msg='[1 image] …'` and the bot described the flag, in its own chat and as a member of a room with a local bot.
+
 ### Phase 7 — Release
 
 `2.31.0` (minor: new methods + additive bot fields; no `minApp` bump). `after-change` workflow, merge into
@@ -233,6 +241,8 @@ attachment tray and `/` command panel kept (Codync has them), and the plan tray 
    `http://100.101.122.109:8642` (Tailscale) and the key lives in `~/.hermes/.env` on the VPS.
 2. ~~Whether the VPS gateway has `gateway.multiplex_profiles` on~~ — yes; `/p/<profile>/` works, and each
    profile needs its own `API_SERVER_KEY`.
-3. Whether the VPS gateway accepts file uploads. The capability list shows no upload feature
-   (`artifact_upload` is browser-extension only: 10 MiB, allowlisted MIME types); until one is confirmed,
-   images travel as `image_url` parts and other files are named in the prompt.
+3. ~~Whether the VPS gateway accepts file uploads~~ — settled (2026-10-31, from the VPS's own
+   `api_server` source): `chat/stream` normalizes only `text` and `image_url` parts, refusing file parts with
+   `unsupported_content_type`; a request is capped at 10 MB. `/v1/artifacts/upload` exists but is
+   browser-control only and its downloads are one-shot, not agent input. So images travel as `image_url` data
+   URLs (implemented) and other files are named in the prompt.

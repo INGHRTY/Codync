@@ -23,6 +23,7 @@ mod fallback;
 mod fast_mode;
 mod files;
 mod gateway;
+mod images;
 mod launch;
 mod lifecycle;
 mod queue;

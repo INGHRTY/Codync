@@ -5,6 +5,7 @@ use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
+use crate::chat::uploads;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{EntryKind, Lane, now_ms};
@@ -114,9 +115,8 @@ impl Actor {
         self.turn_text = from_user.then(|| text.to_owned());
         self.turn_entries = if from_user { entry_ids.to_vec() } else { Vec::new() };
         // A room turn answers the user's message in the room; another turn, the messages it was given.
-        let answered = self.active_group.as_ref().map_or(self.turn_entries.as_slice(), |g| g.answers.as_slice());
         let opens = self.prompt_call.take().filter(|call| crate::chat::calls::is_live(&self.hub.store, call));
-        self.turn_call = crate::chat::calls::of_turn(&self.hub.store, answered).or(opens);
+        self.turn_call = crate::chat::calls::of_turn(&self.hub.store, self.answered()).or(opens);
         self.turn_memory_revision.clear();
         self.announce = None;
         self.first_prompt = None;
@@ -221,10 +221,17 @@ impl Actor {
             self.compose(&sid, text).await?
         };
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
+        // A gateway's agent can't open this computer's files: the message's images travel in the turn itself,
+        // and the prompt names the ones the turn can't carry.
+        let gateway = self.conn.as_ref().is_some_and(Conn::is_gateway);
+        let (images, uncarried) = if gateway { self.turn_images().await } else { Default::default() };
         let mut params = json!({
             "sessionId": sid,
-            "prompt": [{"type": "text", "text": prompt}],
+            "prompt": [{"type": "text", "text": format!("{prompt}{}", uploads::remote_suffix(&uncarried))}],
         });
+        if gateway && let Some(parts) = params["prompt"].as_array_mut() {
+            parts.extend(images);
+        }
         if !system.is_empty() {
             // Hermes' `system_message` field, which every turn of a gateway bot carries.
             params["instructions"] = system.into();

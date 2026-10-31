@@ -183,11 +183,11 @@ impl Conn {
                 }
                 let session =
                     params["sessionId"].as_str().ok_or_else(|| anyhow!("session/prompt needs a sessionId"))?;
-                let text = acp::content_text(&params["prompt"]);
+                let message = gateway::chat_message(&params["prompt"]);
                 // Hermes' own field for a turn's instructions; the ACP `systemPrompt` shape never reaches here.
                 let system = params["instructions"].as_str().unwrap_or_default().to_owned();
                 let model = params["model"].as_str().map(str::to_owned);
-                Ok(Answer::Gateway(g.send(session, &text, &system, model.as_deref()).await?))
+                Ok(Answer::Gateway(g.send(session, &message, &system, model.as_deref()).await?))
             }
         }
     }
