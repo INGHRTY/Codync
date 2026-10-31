@@ -1,6 +1,5 @@
 .chat-window {
   height: 100%;
-  min-width: 760px;
   min-height: 500px;
   background: var(--background);
   position: relative;
@@ -152,10 +151,14 @@ html[data-platform="darwin"] .sidebar-header {
   padding-left: 0;
   opacity: 0;
 }
-/* The rail's computer filter. */
+/* The rail's computer filter: it fills the rail, and the pill shrinks to fit it. */
 .rail-header {
-  width: 70px;
+  width: 100%;
   align-self: center;
+}
+.rail-header .computer-filter-action {
+  width: 44px;
+  padding: 0;
 }
 
 .roster {
@@ -337,7 +340,9 @@ html[data-platform="darwin"] .sidebar-header {
 
 .detail {
   flex: 1;
-  min-width: 420px;
+  /* No minimum of its own: the window's own minimum (the rail, its drag edge and the conversation's
+     424) keeps it readable, and a smaller host (the website demo) narrows it instead of clipping it. */
+  min-width: 0;
   height: 100%;
   position: relative;
   overflow: hidden;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
+import { CHAT_MIN_WIDTH, SIDEBAR_HANDLE_WIDTH, SIDEBAR_RAIL } from '@shared/layout'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { AnchoredMenu, Dialog, ModalHeader, Sheet, type MenuItem } from '../components/Overlay'
@@ -187,10 +188,7 @@ interface CreateTarget {
   computerId: string
 }
 
-/** The conversation's own minimum, and the rail the sidebar folds to when the window can't hold both. */
-const CHAT_MIN_WIDTH = 424
-const SIDEBAR_RAIL = 48
-/** Narrower than this by dragging, the sidebar folds to the rail. */
+/** Narrower than this by dragging, the sidebar folds to the rail (see `@shared/layout`). */
 const SIDEBAR_MIN = 140
 const SIDEBAR_MAX = 420
 
@@ -223,7 +221,7 @@ function ChatSplitView() {
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(SIDEBAR_MIN, window.innerWidth - CHAT_MIN_WIDTH)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(SIDEBAR_MIN, window.innerWidth - SIDEBAR_HANDLE_WIDTH - CHAT_MIN_WIDTH)))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -325,7 +323,7 @@ function ChatSplitView() {
 
   // The sidebar's edge drags its width; narrower than the minimum collapses it to the rail.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(SIDEBAR_MAX, window.innerWidth - CHAT_MIN_WIDTH)
+  const sidebarMax = Math.min(SIDEBAR_MAX, window.innerWidth - SIDEBAR_HANDLE_WIDTH - CHAT_MIN_WIDTH)
   const resizeSidebar = (proposed: number) => {
     const nextCompact = proposed < SIDEBAR_MIN
     if (nextCompact !== compact) setCompact(nextCompact)
@@ -365,7 +363,7 @@ function ChatSplitView() {
   }
 
   // Grok's collapse: a window too narrow for the sidebar and the chat's own minimum shows the rail.
-  const railed = compact || windowSize.width < sidebarWidth + CHAT_MIN_WIDTH
+  const railed = compact || windowSize.width < sidebarWidth + SIDEBAR_HANDLE_WIDTH + CHAT_MIN_WIDTH
   const width = railed ? SIDEBAR_RAIL : sidebarWidth
   return (
     <div className={`split ${showAccount || contextBot ? 'covered' : ''}`}>

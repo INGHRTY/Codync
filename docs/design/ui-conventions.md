@@ -212,9 +212,11 @@ follow/jump actions remain unchanged.
 Per the requested desktop reference, use the system sans font with 13-point,
 medium-weight roster names (semibold for unread), 12-point previews and chat text
 at the selected text size, without the former extra two-point offset. The default
-sidebar is 180 points (it folds to a 48-point rail when the window cannot hold it
-and the chat's 424-point minimum), the conversation column is 640 points at the
-default 14-point text, and the radius scale is 4/8/12/16/18 with spacing at
+sidebar is 180 points (it folds to a 48-point rail when the window cannot hold it,
+the rail's 1-point drag edge and the chat's 424-point minimum, so the window never
+goes below 473 points; `apps/desktop/src/shared/layout.ts` holds the rail and chat
+minimums and derives the window minimum), the conversation column is 640 points at
+the default 14-point text, and the radius scale is 4/8/12/16/18 with spacing at
 4/8/12/16/24/32; existing custom widths and font preferences are respected.
 Reference surfaces: dark canvas #070707, sidebar #111111, capsule #181818, composer
 #2f2f2f. Search/new buttons, the title pill, Extensions and composer use subtle

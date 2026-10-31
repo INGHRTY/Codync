@@ -5,6 +5,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell } from 'electron'
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
+import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from '../shared/layout'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
@@ -74,9 +75,11 @@ function openChat() {
   chat = new BrowserWindow({
     width: 1100,
     height: 760,
-    // Narrow enough for the chat alone beside a narrow sidebar: the rail plus a 424px conversation.
-    minWidth: 424,
-    minHeight: 500,
+    // The minimums are the web page's own size, so a framed window's border can't shrink the layout.
+    useContentSize: true,
+    // Narrow enough for the chat alone beside a narrow sidebar: the rail, its drag edge and a 424px chat.
+    minWidth: WINDOW_MIN_WIDTH,
+    minHeight: WINDOW_MIN_HEIGHT,
     title: app.getName(),
     show: false,
     backgroundColor: background(),

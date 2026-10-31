@@ -1,8 +1,8 @@
 # Hermes frontend: cloud + local bots in one room
 
-Status: **Phases 1–4, 6 and 7 landed**, phases 1–2 verified live against the user's VPS (2026-10-30),
-gateway images against it (2026-10-31). Phase 5's Grok Bot side-by-side pass still needs an unlocked display.
-Decisions taken with the user on 2026-10-30.
+Status: **Phases 1–5, 6 and 7 landed**, phases 1–2 verified live against the user's VPS (2026-10-30),
+gateway images against it (2026-10-31), and Phase 5's Grok Bot side-by-side pass against the installed
+0.78.1 (2026-11-01). Decisions taken with the user on 2026-10-30.
 
 Codync becomes the front end for Hermes: bots that run on the user's own VPS (Hermes `api_server`) and bots
 that run on this computer (`hermes acp`) sit in the same roster, the same group chats, and the same rooms.
@@ -171,6 +171,21 @@ card raised and answered (`selected: once`) with the run continuing, and a clean
 
 See [Grok Bot deltas](#grok-bot-deltas). Every item lands in iOS, Android, desktop and TUI together.
 
+Landed with the deltas table (desktop `403b6ff4`, `9bf4a8a6`, `57a9940c`, mirrored in iOS, Android and the
+TUI). The side-by-side pass (2026-11-01, Grok Bot 0.78.1 running beside the built desktop renderer, both in
+dark mode at 1059 × 1092) measured the desktop against the live app: sidebar 180 (the 325 on screen is the
+user's own dragged width) folding to the 48 rail, the conversation column at 640 with 14/22 text, bubbles at
+the 18 radius with a one-line bubble 36 tall, the solid-user/tinted-agent pairing, and the floating title
+pill Grok also draws. It found two leftovers of the old 760-point window in the renderer — `.chat-window`'s
+`min-width: 760px` and `.detail`'s `min-width: 420px` — which clipped the conversation and the composer
+whenever the window was narrower than 760+sidebar; both are gone, and the window's minimum is now
+`WINDOW_MIN_WIDTH` (the 48 rail, its 1-point drag edge and the chat's 424) in
+`apps/desktop/src/shared/layout.ts`, so the layout holds from the smallest window up. Grok's own dark
+surfaces measured `#121212` for the conversation pane with agent bubbles a 6–10% white tint over it;
+Codync keeps its own dark pair (a solid light user bubble, the agent a tint) as the table asks. Not
+verified: the plan tray on a real running turn (the demo story carries no plan), and the iPhone/Android
+rendering (Android cannot be built on this machine).
+
 ### Phase 6 — Hermes adaptation
 
 - Local profile per bot: `hermes profile create codync-<slug> --clone --no-alias` once
@@ -220,8 +235,8 @@ runtime and the bundle carries no dark block.
 
 | Token | Grok Bot | Codync today | Change |
 | --- | --- | --- | --- |
-| Sidebar width | declares `180px`, `48px` collapsed (surface to confirm live) | `266px` default, `76px` rail | Confirm, then narrow: the chat gets the room. |
-| Chat min width | `--sand-chat-min-width: 424px` | `760px` window min | Lower the window minimum. |
+| Sidebar width | `180px`, `48px` collapsed (confirmed live) | `266px` default, `76px` rail | Confirm, then narrow: the chat gets the room. |
+| Chat min width | `--sand-chat-min-width: 424px` | `760px` window min | Lower the window minimum: 473 (the rail, its drag edge and 424). |
 | Conversation column | bubble max `min(640px, 100%)` | `820px` column | Narrow to 640. |
 | Conversation text | `14px / 22px` | `12px` base, scaled | Raise the default text size. |
 | Bubble radius | prose `18px`, one-line `36px` height | `16px` (`--radius-l`) | `18px`, one-line bubbles at 36px. |
