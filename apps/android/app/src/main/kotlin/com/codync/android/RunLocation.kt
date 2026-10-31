@@ -31,9 +31,8 @@ internal fun CardRows.runLocationRows(state: AppState, draft: BotDraft, change: 
                 else "As an agent process on this computer.") {
                 if (connections.isEmpty()) Text(tr("This computer"), style = Type.body, color = Palette.secondary)
                 else ChoicePicker(if (draft.isCloud) "cloud" else "local",
-                    listOf("local" to "This computer", "cloud" to "Gateway")) {
-                    change(draft.withRunLocation(if (it == "cloud") draft.connection ?: connections.first().id else null))
-                }
+                    listOf("local" to "This computer", "cloud" to "Gateway"),
+                    { change(draft.withRunLocation(if (it == "cloud") draft.connection ?: connections.first().id else null)) })
             }
         }
     }
@@ -50,9 +49,8 @@ internal fun CardRows.runLocationRows(state: AppState, draft: BotDraft, change: 
     row {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ValueRow("Gateway", detail = if (connections.size == 1) "Add another in Settings on the computer." else null) {
-                ChoicePicker(draft.connection ?: connections.first().id, connections.map { it.id to it.name }) {
-                    change(draft.copy(connection = it, model = null))
-                }
+                ChoicePicker(draft.connection ?: connections.first().id, connections.map { it.id to it.name },
+                    { change(draft.copy(connection = it, model = null)) })
             }
         }
     }
@@ -60,10 +58,10 @@ internal fun CardRows.runLocationRows(state: AppState, draft: BotDraft, change: 
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ValueRow("Profile", detail = "One profile per bot keeps its memory, skills and sessions apart. Codync makes it on the gateway the first time the bot needs it.") {
                 Text(profileName(draft) ?: (draft.id?.let { hermesProfileOf(it, null) } ?: "codync-<bot id>"),
-                    style = Type.caption.monospaced(), color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    style = Type.caption.monospaced, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             FieldBox(draft.hermesProfile.orEmpty(), { change(draft.copy(hermesProfile = it.trim().ifEmpty { null }?.lowercase())) },
-                "Automatic", style = Type.caption.monospaced(), capitalize = false)
+                "Automatic", style = Type.caption.monospaced, capitalize = false)
         }
     }
 }
@@ -99,9 +97,8 @@ internal fun CardRows.runLocationRows(state: AppState, draft: BotDraft, change: 
         ValueRow("Model", detail = failure ?: "Which model the gateway's profile answers with.") {
             when {
                 loading -> Spinner()
-                models.isNotEmpty() -> ChoicePicker(draft.model ?: "", listOf("" to "Default") + models.map { it to it }) {
-                    change(draft.copy(model = it.ifEmpty { null }))
-                }
+                models.isNotEmpty() -> ChoicePicker(draft.model ?: "", listOf("" to "Default") + models.map { it to it },
+                    { change(draft.copy(model = it.ifEmpty { null })) })
                 else -> Text(tr(if (failure == null) "Default" else "The gateway didn't answer"),
                     style = Type.body, color = if (failure == null) Palette.secondary else Palette.warning)
             }

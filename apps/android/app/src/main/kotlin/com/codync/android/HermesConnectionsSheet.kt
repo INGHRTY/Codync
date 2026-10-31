@@ -51,7 +51,7 @@ import com.codync.android.design.*
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         CharacterAvatar(bot.avatarShape, bot.avatarColor, 24.dp)
                         Text(bot.name, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Text(hermesProfileOf(bot.id, bot.hermesProfile), style = Type.caption.monospaced(), color = Palette.tertiary,
+                        Text(hermesProfileOf(bot.id, bot.hermesProfile), style = Type.caption.monospaced, color = Palette.tertiary,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }

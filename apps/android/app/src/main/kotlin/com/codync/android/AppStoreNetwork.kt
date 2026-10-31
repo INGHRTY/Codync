@@ -3,8 +3,9 @@ package com.codync.android
 import com.codync.android.core.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.update
-import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonObject
 
 // The computer's network as this phone sees it: read-only, from the stream's hello, kept current by its event.
 
@@ -40,7 +41,7 @@ internal fun AppStore.refreshConnections() {
     contextScope.launch {
         val list = try {
             val answer = active.call("listConnections")
-            WireJson.decodeFromJsonElement<List<HermesConnection>>(answer.getValue("connections"))
+            WireJson.decodeFromJsonElement<List<HermesConnection>>(answer.jsonObject.getValue("connections"))
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
             android.util.Log.i("Codync", "Connections failed: ${error.message}")
