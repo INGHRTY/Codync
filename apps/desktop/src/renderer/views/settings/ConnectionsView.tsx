@@ -183,7 +183,7 @@ function ConnectionEditor({ store, existing, done, remove }: {
           <Field label="Name" value={draft.name} onChange={(v) => set('name', v)} placeholder="VPS" />
           <Field label="Address" value={draft.baseUrl} onChange={(v) => set('baseUrl', v)} placeholder="https://vps.example.com" mono />
           <Field label="Profile" value={draft.profile} onChange={(v) => set('profile', v)} placeholder="default" mono detail="The profile this gateway's plain routes serve, usually default. A bot gets its own profile under /p/." />
-          <Field label="SSH host" value={draft.ssh ?? ''} onChange={(v) => set('ssh', v)} placeholder="user@vps.example.com" mono detail="Optional. Lets Codync make each bot's profile and key on that computer. Without it, make the profiles yourself and save their keys here." />
+          <Field label="SSH host" value={draft.ssh ?? ''} onChange={(v) => set('ssh', v)} placeholder="user@vps.example.com" mono detail="Optional. Lets Codync make each bot's profile and key on that computer, and install its Codync tools (messages, memory, other bots) in that profile. Without it, make the profiles yourself and save their keys here: those bots then answer without those tools." />
         </CardSection>
         <CardSection title="Key" footer={`The key for this profile, at least 16 characters. ${existing ? 'Leave empty to keep the saved one.' : ''}`}>
           <Field label="Profile key" value={key} onChange={setKey} placeholder={existing ? tr('Saved') : 'Paste the gateway key'} secret mono />

@@ -130,17 +130,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                     .await??;
             json!({"data": base64::engine::general_purpose::STANDARD.encode(data), "size": size})
         }
-        // The bot's own token and endpoint for an agent on another computer (`/mcp/<bot>`), for a gateway's profile.
-        "mcpBridge" => {
-            let bot = str_arg(&b, "botId")?;
-            let token = crate::mcp::bridge::token(hub, bot)?;
-            let (port, bot) = (hub.port, bot.to_owned());
-            let url = tokio::task::spawn_blocking(move || {
-                crate::service::addresses(port).first().map(|address| format!("{address}/mcp/{bot}"))
-            })
-            .await?;
-            json!({"token": token, "url": url})
-        }
         "send" => {
             let bot = str_arg(&b, "botId")?;
             let text = b["text"].as_str().unwrap_or_default().trim();

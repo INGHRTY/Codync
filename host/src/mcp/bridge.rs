@@ -6,7 +6,12 @@
 use crate::hub::Hub;
 use crate::mcp::{self, Server};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Tools a bot on another computer isn't offered: they read and write files of this computer's, while its agent
+/// works on the gateway's, so they would fail — or, given a path of its own, hand this computer's files out.
+const THIS_COMPUTERS_FILES: &[&str] = &["send_file", "publish_artifact", "list_artifacts"];
 
 /// The token a bot's agent on another computer presents. Made on first use and kept, so the profile on the gateway
 /// and this computer agree across restarts.
@@ -20,39 +25,58 @@ pub fn token(hub: &Hub, bot: &str) -> anyhow::Result<String> {
     Ok(token)
 }
 
-/// Whether `given` is the bot's token. Every bot has its own, so a gateway holding one bot's token reaches only that
-/// bot's tools.
+/// Whether `given` is the token of the bot `bot`, which must still exist: every bot has its own, so a gateway
+/// holding one bot's token reaches only that bot's tools, and a deleted bot's token reaches nothing.
 pub fn authorized(hub: &Hub, bot: &str, given: &str) -> bool {
     let stored = hub.store.kv_get(&format!("mcp-bridge-token:{bot}")).unwrap_or_default();
-    !stored.is_empty() && crate::remote::crypto::ct_eq(given.as_bytes(), stored.as_bytes())
+    !stored.is_empty()
+        && crate::remote::crypto::ct_eq(given.as_bytes(), stored.as_bytes())
+        && live_bot(hub, bot).is_ok()
+}
+
+/// Whether this computer still has the bot `id`.
+fn live_bot(hub: &Hub, id: &str) -> Result<(), Value> {
+    match hub.store.bot(id) {
+        Ok(Some(row)) if !row.deleted => Ok(()),
+        Ok(_) => Err(json!({"code": -32602, "message": format!("no bot `{id}` on this computer")})),
+        Err(e) => Err(json!({"code": -32603, "message": format!("{e:#}")})),
+    }
 }
 
 /// The servers a bot on another computer gets: what it can do in Codync with no process here. `computer`,
-/// `connectors` and `composio` stay on this computer, since each runs something here.
-fn servers(bot: &crate::store::BotConfig) -> Vec<Server> {
-    let mut servers = vec![Server::Chat, Server::Team, Server::Routines, Server::Memory];
-    if bot.manage_team {
-        servers.push(Server::Manage);
-    }
-    servers
+/// `connectors` and `composio` stay on this computer, since each runs something here, and a bot on a gateway can't
+/// manage this computer's bots (the host refuses that when one is made), so `manage` stays too.
+fn servers() -> [Server; 4] {
+    [Server::Chat, Server::Team, Server::Routines, Server::Memory]
 }
 
-/// Every tool the bot has, in one list, and the instructions that go with them.
-fn catalog(bot: &crate::store::BotConfig) -> (Vec<Server>, Value, String) {
-    let servers = servers(bot);
-    let mut tools = Vec::new();
-    let mut instructions = String::new();
-    for server in &servers {
-        let (_, about, list) = mcp::describe(*server);
-        if let Some(list) = list.as_array() {
-            tools.extend(list.iter().cloned());
+/// Every tool the bot has, its instructions, and which server each tool belongs to.
+struct Catalog {
+    tools: Value,
+    instructions: String,
+    owners: HashMap<String, Server>,
+}
+
+impl Catalog {
+    fn of() -> Self {
+        let (mut tools, mut instructions, mut owners) = (Vec::new(), String::new(), HashMap::new());
+        for server in servers() {
+            let (_, about, list) = mcp::describe(server);
+            if !about.is_empty() {
+                instructions.push_str(about);
+                instructions.push('\n');
+            }
+            for tool in list.as_array().into_iter().flatten() {
+                let Some(name) = tool["name"].as_str() else { continue };
+                if server == Server::Chat && THIS_COMPUTERS_FILES.contains(&name) {
+                    continue;
+                }
+                owners.insert(name.to_owned(), server);
+                tools.push(tool.clone());
+            }
         }
-        if !about.is_empty() {
-            instructions.push_str(about);
-            instructions.push('\n');
-        }
+        Self { tools: Value::Array(tools), instructions: instructions.trim_end().to_owned(), owners }
     }
-    (servers, Value::Array(tools), instructions.trim_end().to_owned())
 }
 
 /// One JSON-RPC message from the bot's agent. `None` for a notification, which has no answer.
@@ -60,34 +84,32 @@ pub async fn handle(hub: &Arc<Hub>, bot: &str, msg: &Value) -> Option<Value> {
     let id = msg.get("id").filter(|id| !id.is_null())?.clone();
     let params = &msg["params"];
     let reply = match msg["method"].as_str().unwrap_or_default() {
-        "initialize" => match hub.store.bot(bot).ok().flatten() {
-            Some(row) => {
-                let (_, _, instructions) = catalog(&row.config);
-                Ok(json!({
-                    "protocolVersion": params["protocolVersion"].as_str().unwrap_or(mcp::PROTOCOL_VERSION),
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "codync", "version": env!("CARGO_PKG_VERSION")},
-                    "instructions": instructions,
-                }))
-            }
-            None => Err(json!({"code": -32602, "message": format!("no bot `{bot}` on this computer")})),
-        },
+        // The one request that needs no bot: a computer checking it can reach this one.
         "ping" => Ok(json!({})),
-        "tools/list" => match hub.store.bot(bot).ok().flatten() {
-            Some(row) => Ok(json!({"tools": catalog(&row.config).1})),
-            None => Err(json!({"code": -32602, "message": format!("no bot `{bot}` on this computer")})),
-        },
-        "tools/call" => match hub.store.bot(bot).ok().flatten() {
-            Some(row) => {
-                let (servers, _, _) = catalog(&row.config);
+        "initialize" => live_bot(hub, bot).map(|()| {
+            json!({
+                "protocolVersion": params["protocolVersion"].as_str().unwrap_or(mcp::PROTOCOL_VERSION),
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "codync", "version": env!("CARGO_PKG_VERSION")},
+                "instructions": Catalog::of().instructions,
+            })
+        }),
+        "tools/list" => live_bot(hub, bot).map(|()| json!({"tools": Catalog::of().tools})),
+        "tools/call" => {
+            // The tool's owner, once the bot is known to be here: `Server` holds no borrow of the catalog.
+            let route = live_bot(hub, bot).and_then(|()| {
+                let owners = Catalog::of().owners;
                 let name = params["name"].as_str().unwrap_or_default();
-                match which(&servers, name) {
-                    Some(server) => Ok(mcp::call(hub.port, &hub.token, bot, params, server).await),
-                    None => Err(json!({"code": -32602, "message": format!("unknown tool {name}")})),
-                }
+                owners
+                    .get(name)
+                    .copied()
+                    .ok_or_else(|| json!({"code": -32602, "message": format!("unknown tool {name}")}))
+            });
+            match route {
+                Ok(server) => Ok(mcp::call(hub.port, &hub.token, bot, params, server).await),
+                Err(e) => Err(e),
             }
-            None => Err(json!({"code": -32602, "message": format!("no bot `{bot}` on this computer")})),
-        },
+        }
         method => Err(json!({"code": -32601, "message": format!("unknown method {method}")})),
     };
     Some(match reply {
@@ -96,42 +118,80 @@ pub async fn handle(hub: &Arc<Hub>, bot: &str, msg: &Value) -> Option<Value> {
     })
 }
 
-/// The server a tool belongs to: its name is in that server's list.
-fn which(servers: &[Server], name: &str) -> Option<Server> {
-    servers.iter().copied().find(|server| {
-        mcp::describe(*server)
-            .2
-            .as_array()
-            .is_some_and(|tools| tools.iter().any(|tool| tool["name"].as_str() == Some(name)))
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// A hub on an in-memory store, with its identity in a temp folder the test removes.
+    fn hub() -> (Arc<Hub>, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("codync-bridge-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let hub = Hub::new(
+            crate::store::Store::open(std::path::Path::new(":memory:")).expect("store"),
+            "test".into(),
+            crate::remote::identity::Identity::load_or_create(&dir).expect("identity"),
+            "test".into(),
+            19222,
+        );
+        (hub, dir)
+    }
+
+    fn add_bot(hub: &Hub, id: &str) {
+        let mut cfg: crate::store::BotConfig =
+            serde_json::from_value(json!({"id": id, "name": "B", "backend": "hermes", "cwd": "/w"})).unwrap();
+        cfg.connection = Some("c".into());
+        hub.store.save_bot(&cfg).expect("bot");
+    }
+
     #[test]
     fn a_bridge_bot_lists_every_codync_tool_once() {
-        let bot: crate::store::BotConfig = serde_json::from_value(
-            json!({"id": "b", "name": "B", "backend": "hermes", "cwd": "/w", "manageTeam": true}),
-        )
-        .unwrap();
-        let (listed, tools, instructions) = catalog(&bot);
-        assert!(listed.contains(&Server::Chat) && listed.contains(&Server::Manage));
+        let tools = Catalog::of().tools;
         let names: Vec<&str> = tools.as_array().unwrap().iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"send_message"), "{names:?}");
-        assert!(names.contains(&"update_bot"), "{names:?}");
+        assert!(names.contains(&"search_memory"), "{names:?}");
+        assert!(names.contains(&"message_bot"), "{names:?}");
         let mut sorted = names.clone();
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(sorted.len(), names.len(), "no tool is listed twice");
-        assert_ne!(instructions, "", "the agent reads what these tools are for");
-        // A bot that can't manage the team isn't offered the tools for it: they'd only be refused.
-        let plain: crate::store::BotConfig = serde_json::from_value(
-            json!({"id": "b", "name": "B", "backend": "hermes", "cwd": "/w", "manageTeam": false}),
-        )
-        .unwrap();
-        assert_eq!(which(&servers(&plain), "update_bot"), None);
-        assert_eq!(which(&servers(&plain), "send_message"), Some(Server::Chat));
+        // These read this computer's files, which the bot's agent can't see from the gateway.
+        for local in THIS_COMPUTERS_FILES {
+            assert!(!names.contains(local), "{local} would read this computer's files: {names:?}");
+        }
+        assert_ne!(Catalog::of().instructions, "", "the agent reads what these tools are for");
+    }
+
+    #[tokio::test]
+    async fn a_token_answers_for_its_own_live_bot_alone() {
+        let (hub, dir) = hub();
+        add_bot(&hub, "a");
+        add_bot(&hub, "b");
+        let token = token(&hub, "a").expect("a token");
+        assert!(authorized(&hub, "a", &token));
+        assert!(!authorized(&hub, "b", &token), "another bot's path refuses it");
+        assert!(!authorized(&hub, "a", "cdcb_wrong"));
+        assert!(!authorized(&hub, "nobody", &token), "no such bot");
+        // A deleted bot's token reaches nothing, even before its token is cleared.
+        hub.store.delete_bot("a").expect("delete");
+        assert!(!authorized(&hub, "a", &token));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_request_from_a_deleted_bot_is_refused_and_notifications_are_not_answered() {
+        let (hub, dir) = hub();
+        add_bot(&hub, "a");
+        hub.store.delete_bot("a").expect("delete");
+        let ask = |method: &str| json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": {}});
+        let error = handle(&hub, "a", &ask("tools/list")).await.expect("an answer")["error"].clone();
+        assert!(error["message"].as_str().unwrap().contains("no bot `a`"), "{error}");
+        // A notification (no id) is accepted with nothing to say, and an unknown method says so.
+        assert!(handle(&hub, "a", &json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).await.is_none());
+        let unknown = handle(&hub, "a", &ask("resources/list")).await.expect("an answer");
+        assert_eq!(unknown["error"]["code"], -32601);
+        // A reachability check answers whatever the bot's state.
+        let pong = handle(&hub, "a", &ask("ping")).await.expect("an answer");
+        assert_eq!(pong["result"], json!({}));
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

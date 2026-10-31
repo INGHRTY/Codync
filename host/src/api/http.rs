@@ -309,6 +309,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_bridge_answers_a_bots_token_and_refuses_anyone_else() {
+        let (hub, dir) = temp_hub();
+        let cfg: crate::store::BotConfig =
+            serde_json::from_value(json!({"id": "b1", "name": "B", "backend": "hermes", "cwd": "/w"})).expect("bot");
+        hub.store.save_bot(&cfg).expect("save");
+        let token = crate::mcp::bridge::token(&hub, "b1").expect("a token");
+        let ask = |token: &str, body: &'static [u8]| {
+            let mut headers = HeaderMap::new();
+            headers.insert("authorization", format!("Bearer {token}").parse().expect("header"));
+            mcp_bridge(State(hub.clone()), Path("b1".into()), headers, Bytes::from_static(body))
+        };
+        let listed = ask(&token, br#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#).await;
+        assert_eq!(listed.status(), StatusCode::OK);
+        // A notification has no answer.
+        let notified = ask(&token, br#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).await;
+        assert_eq!(notified.status(), StatusCode::ACCEPTED);
+        // The computer's own token, or another bot's, doesn't open this bot's tools.
+        assert_eq!(
+            ask(&hub.token, br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            ask("cdcb_wrong", br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
     async fn health_keeps_the_binary_and_busy_state_on_this_computer() {
         let (hub, dir) = temp_hub();
         let at = |addr: &str| ConnectInfo(addr.parse::<SocketAddr>().expect("address"));

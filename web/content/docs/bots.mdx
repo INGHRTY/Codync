@@ -53,7 +53,8 @@ Then open the bot's settings and set **Runs on** to that gateway. A bot on a gat
 
 - runs as Hermes there, in its own **Profile**, so its memory, skills and sessions stay apart from every other bot's. Codync makes the profile on the gateway the first time the bot needs it; type a name to choose one, or leave it empty for one Codync names from the bot's id;
 - has no workspace, Fast mode, fallbacks or agent of this computer to pick: its model is what the gateway's profile offers;
-- can join group chats with this computer's bots, but can't be the lead bot, manage the team, or use this computer's connectors and skills.
+- can join group chats with this computer's bots, but can't be the lead bot, manage the team, or use this computer's connectors and skills;
+- messages you, reacts, uses its own memory, asks other bots and runs its routines through Codync's tools over the network. Codync writes them into the bot's profile on the gateway the first time it connects, which needs that gateway's SSH host (or a profile key you saved yourself); a bot without either still answers, just without those tools. Files and artifacts of this computer, connectors, skills and computer use stay on this computer.
 
 A cloud bot is marked with a cloud: on its avatar in the bot list, beside its name in a group chat, and as `[cloud]` in its row in the terminal UI. Gateways are only on the computer whose host has them: another computer sees its own list.
 

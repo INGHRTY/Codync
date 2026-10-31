@@ -11,7 +11,7 @@ Codync/
 │   │   ├── main.rs            # CLI entry, shared helpers (LockExt, http)
 │   │   ├── hub.rs, store/     # Shared state + event fan-out / SQLite persistence (schema, model, bots, entries, devices)
 │   │   ├── service/           # Data dir, launchd/systemd/Windows install, keep-awake
-│   │   ├── usage/, mcp.rs     # usage/: plan limits from each agent; mcp.rs: built-in stdio MCP servers; mcp/remote.rs: remote connector proxy
+│   │   ├── usage/, mcp.rs     # usage/: plan limits from each agent; mcp.rs: built-in stdio MCP servers; mcp/bridge.rs: a gateway bot's tools over HTTP; mcp/remote.rs: remote connector proxy
 │   │   ├── screen/            # Remote screen: helper protocol, helper socket, phone viewers, bot computer use (cua-driver)
 │   │   ├── api/               # Dispatch (mod.rs), HTTP/SSE routes (http.rs, events.rs), method groups (bots.rs, host.rs, marketplace.rs, remote.rs), caller permissions (devices.rs)
 │   │   ├── agent/             # ACP client, harness discovery, registry, sign-in, setup PTYs, bot actor, new bot defaults (new_bot.rs)

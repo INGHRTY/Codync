@@ -301,6 +301,8 @@ impl Hub {
     pub fn delete_bot(&self, id: &str) -> Result<()> {
         crate::chat::lead::may_delete(&self.store, id)?;
         self.routines.disable_bot(&self.store, id)?;
+        // Its agent on a gateway keeps the profile it was given, but not a token that answers any more.
+        self.store.kv_delete(&format!("mcp-bridge-token:{id}"))?;
         self.team.end_turn(id);
         self.groups.stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);

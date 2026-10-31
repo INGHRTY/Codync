@@ -23,19 +23,21 @@ const PROBE_TIMEOUT: u8 = 8;
 /// may be reachable later (a laptop that slept, a tailnet that came back).
 const RETRY_AFTER_MS: i64 = 10 * 60 * 1000;
 
-/// What a profile's bridge was installed with: the addresses tried, and the one that answered (`None`: none did).
+/// What a bot's bridge was installed with: the profile it went into, the addresses tried, and the one that answered
+/// (`None`: none did).
 #[derive(Serialize, Deserialize)]
 struct Installed {
+    profile: String,
     tried: Vec<String>,
     url: Option<String>,
     at: i64,
 }
 
 impl Installed {
-    /// Whether this is still what the gateway holds: the same addresses, and either a working one or a failure
-    /// recent enough to wait out.
-    fn holds(&self, tried: &[String], now: i64) -> bool {
-        self.tried == tried && (self.url.is_some() || now - self.at < RETRY_AFTER_MS)
+    /// Whether this is still what the gateway holds: the same profile, the same addresses, and either a working one
+    /// or a failure recent enough to wait out.
+    fn holds(&self, profile: &str, tried: &[String], now: i64) -> bool {
+        self.profile == profile && self.tried == tried && (self.url.is_some() || now - self.at < RETRY_AFTER_MS)
     }
 }
 
@@ -81,7 +83,10 @@ async fn profile_key(hub: &Hub, connection: &Connection, profile: &str) -> Resul
 /// answers, so a network that can't carry the tools leaves the profile as it was.
 async fn bridge(hub: &Hub, connection: &Connection, profile: &str, bot: &str) -> Result<()> {
     let Some(ssh) = connection.ssh.as_deref() else {
-        bail!("give the connection an SSH host so its tools can be set up there");
+        // A connection without one is the user's own setup (they make the profile and save its key): there's
+        // nothing to install, and nothing to tell them.
+        tracing::info!(bot, "no SSH host on the connection: the bot's Codync tools stay off");
+        return Ok(());
     };
     let path = format!("/mcp/{bot}");
     let port = hub.port;
@@ -92,31 +97,43 @@ async fn bridge(hub: &Hub, connection: &Connection, profile: &str, bot: &str) ->
     if tried.is_empty() {
         bail!("this computer has no address the gateway could reach");
     }
-    let record = format!("mcp-bridge:{}:{profile}", connection.id);
+    let record = format!("mcp-bridge:{bot}");
     let now = crate::store::now_ms();
     if hub
         .store
         .kv_get(&record)
         .and_then(|v| serde_json::from_str::<Installed>(&v).ok())
-        .is_some_and(|i| i.holds(&tried, now))
+        .is_some_and(|i| i.holds(profile, &tried, now))
     {
         return Ok(());
     }
     let token = crate::mcp::bridge::token(hub, bot)?;
-    let url = probe(ssh, &tried, &token).await.with_context(|| format!("reaching this computer from {ssh}"))?;
-    if let Some(url) = &url {
-        let (config, env) = read_profile(ssh, profile).await?;
-        let config = with_mcp_server(&config, url);
-        let env = with_key(&env, &token);
-        write_profile(ssh, profile, &config, &env)
-            .await
-            .with_context(|| format!("installing its tools in profile `{profile}` on {ssh}"))?;
-    }
-    // An address change is worth a retry; a failure waits [`RETRY_AFTER_MS`] so a gateway that can't reach this
-    // computer doesn't cost an SSH call on every connection.
-    let installed = Installed { tried, url, at: now };
+    let (url, failure) = match install(ssh, profile, &tried, &token).await {
+        Ok(Some(url)) => (Some(url), None),
+        Ok(None) => (None, Some(anyhow!("none of this computer's addresses answers from {ssh}"))),
+        Err(e) => (None, Some(e)),
+    };
+    // A working address holds until the gateway's addresses change; a failure waits [`RETRY_AFTER_MS`], so a
+    // gateway that can't reach this computer costs one SSH call and one notice, not one per connection.
+    let installed = Installed { profile: profile.to_owned(), tried, url, at: now };
     hub.store.kv_set(&record, &serde_json::to_string(&installed)?)?;
-    Ok(())
+    match failure {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
+}
+
+/// Writes the bridge into the profile, answering the address that answered from the gateway (`None`: none did).
+async fn install(ssh: &str, profile: &str, tried: &[String], token: &str) -> Result<Option<String>> {
+    let url = probe(ssh, tried, token).await.with_context(|| format!("reaching this computer from {ssh}"))?;
+    let Some(url) = url else { return Ok(None) };
+    let (config, env) = read_profile(ssh, profile).await?;
+    let config = with_mcp_server(&config, &url)?;
+    let env = with_key(&env, token);
+    write_profile(ssh, profile, &config, &env)
+        .await
+        .with_context(|| format!("installing its tools in profile `{profile}` on {ssh}"))?;
+    Ok(Some(url))
 }
 
 /// A gateway key: 24 random bytes, URL-safe base64.
@@ -145,49 +162,59 @@ fn key_command(profile: &str, key: &str) -> String {
 
 /// Asks the gateway's computer for each address in turn: the first that answers the bot's own token is the one its
 /// profile gets (`OK <url>`), so an address that computer can't use is never written down.
-const PROBE: &str = r#"for c in URLS; do
-  if curl -sf -m PROBE -o /dev/null -X POST -H 'Authorization: Bearer TOKEN' \
-      -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' "$c"
-  then echo "OK $c"; exit 0; fi
-done
-echo UNREACHABLE"#;
-
 async fn probe(ssh: &str, urls: &[String], token: &str) -> Result<Option<String>> {
     let urls = urls.iter().map(|u| crate::shell::quote(u)).collect::<Vec<_>>().join(" ");
-    let script = PROBE.replace("URLS", &urls).replace("PROBE", &PROBE_TIMEOUT.to_string()).replace("TOKEN", token);
+    let body = crate::shell::quote(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#);
+    // `format!`, never placeholders replaced in turn: a URL or a token could spell another's placeholder.
+    let script = format!(
+        r#"for c in {urls}; do
+  if curl -sf -m {PROBE_TIMEOUT} -o /dev/null -X POST -H 'Authorization: Bearer {token}' \
+      -H 'Content-Type: application/json' -d {body} "$c"
+  then echo "OK $c"; exit 0; fi
+done
+echo UNREACHABLE"#
+    );
     let out = run_out(ssh, &script).await?;
     let out = out.trim();
     Ok(out.strip_prefix("OK ").map(|url| url.trim().to_owned()).filter(|url| !url.is_empty()))
 }
 
-/// The profile's `config.yaml` and `.env` as they are there (`""` for a file it doesn't have yet), in one call.
-const READ: &str = r#"d="$HOME/.hermes/profiles/"PROFILE; cat "$d/config.yaml" 2>/dev/null; printf '\nDELIM\n'; cat "$d/.env" 2>/dev/null"#;
+/// The marker between the two files `read_profile` reads in one call.
+const SPLIT: &str = "---codync---";
 
 async fn read_profile(ssh: &str, profile: &str) -> Result<(String, String)> {
-    let delim = format!("---{}", uuid::Uuid::new_v4());
-    let script = READ.replace("PROFILE", &crate::shell::quote(profile)).replace("DELIM", &delim);
+    let profile = crate::shell::quote(profile);
+    let script = format!(
+        r#"d="$HOME/.hermes/profiles/"{profile}; cat "$d/config.yaml" 2>/dev/null; printf '\n{SPLIT}\n'; cat "$d/.env" 2>/dev/null"#
+    );
     let out = run_out(ssh, &script).await?;
-    let (config, env) = out.split_once(&format!("\n{delim}\n")).unwrap_or((out.as_str(), ""));
+    let (config, env) = out.split_once(&format!("\n{SPLIT}\n")).unwrap_or((out.as_str(), ""));
     Ok((config.to_owned(), env.to_owned()))
 }
 
-/// Both files at once, through base64 so no line of YAML or a token meets the shell's quoting.
-const WRITE: &str = r#"d="$HOME/.hermes/profiles/"PROFILE; mkdir -p "$d"
-printf '%s' 'CONFIG' | base64 -d > "$d/config.yaml"
-printf '%s' 'ENV' | base64 -d > "$d/.env"; chmod 600 "$d/.env""#;
-
 async fn write_profile(ssh: &str, profile: &str, config: &str, env: &str) -> Result<()> {
-    use base64::Engine as _;
-    let b64 = |text: &str| base64::engine::general_purpose::STANDARD.encode(text);
-    let script = WRITE
-        .replace("PROFILE", &crate::shell::quote(profile))
-        .replace("CONFIG", &b64(config))
-        .replace("ENV", &b64(env));
-    run(ssh, &script).await
+    run(ssh, &write_script(profile, config, env)).await
 }
 
-/// `config` with this bot's bridge under `mcp_servers.codync`, replacing an entry an earlier setup left.
-fn with_mcp_server(config: &str, url: &str) -> String {
+/// Both files at once, through base64 so no line of YAML or a token meets the shell's quoting. Each value goes in
+/// once, by `format!`: a payload that spells a placeholder of its own can't be mistaken for one.
+fn write_script(profile: &str, config: &str, env: &str) -> String {
+    use base64::Engine as _;
+    let b64 = |text: &str| base64::engine::general_purpose::STANDARD.encode(text);
+    format!(
+        r#"d="$HOME/.hermes/profiles/"{profile}; mkdir -p "$d"
+printf '%s' '{config}' | base64 -d > "$d/config.yaml"
+printf '%s' '{env}' | base64 -d > "$d/.env"; chmod 600 "$d/.env""#,
+        profile = crate::shell::quote(profile),
+        config = b64(config),
+        env = b64(env),
+    )
+}
+
+/// `config` with this bot's bridge under `mcp_servers.codync`, replacing an entry an earlier setup left. A
+/// `mcp_servers` written other than as a block of its own (`mcp_servers: {other: …}`) is refused rather than
+/// appended to, which would leave the file with two keys and lose the profile's own servers.
+fn with_mcp_server(config: &str, url: &str) -> Result<String> {
     let entry = [
         "  codync:".to_owned(),
         format!("    url: {url}"),
@@ -221,12 +248,15 @@ fn with_mcp_server(config: &str, url: &str) -> String {
                 out.extend(entry.iter().cloned());
                 placed = true;
             }
-            Some("") => {
+            // A key of its own, perhaps with a comment on it: the entry goes under it.
+            Some(rest) if rest.is_empty() || rest.starts_with('#') => {
                 out.push(line);
                 out.extend(entry.iter().cloned());
                 placed = true;
             }
-            _ => out.push(line),
+            // Written some other way, which this can't edit without guessing: leave the profile alone.
+            Some(other) => bail!("its config.yaml writes mcp_servers inline ({other})"),
+            None => out.push(line),
         }
     }
     if !placed {
@@ -238,7 +268,7 @@ fn with_mcp_server(config: &str, url: &str) -> String {
     }
     let mut text = out.join("\n");
     text.push('\n');
-    text
+    Ok(text)
 }
 
 /// `env` with `MCP_CODYNC_API_KEY` set to the bot's token (`config.yaml` reads it by name), other lines kept.
@@ -322,7 +352,7 @@ mod tests {
     #[test]
     fn the_bridge_is_written_under_mcp_servers_and_rewritten_in_place() {
         let url = "http://100.111.188.83:19222/mcp/b1";
-        let written = with_mcp_server("model: hermes\nmcp_servers:\n  other:\n    url: http://x\n", url);
+        let written = with_mcp_server("model: hermes\nmcp_servers:\n  other:\n    url: http://x\n", url).unwrap();
         assert!(
             written.contains("mcp_servers:\n  codync:\n    url: http://100.111.188.83:19222/mcp/b1\n    headers:"),
             "{written}"
@@ -330,22 +360,47 @@ mod tests {
         assert!(written.contains("  other:\n    url: http://x"), "the profile's own servers stay: {written}");
         assert!(written.contains("Authorization: Bearer ${MCP_CODYNC_API_KEY}"));
         // Set up again (a new address): one entry, not two.
-        let moved = with_mcp_server(&written, "http://100.101.122.109:19222/mcp/b1");
+        let moved = with_mcp_server(&written, "http://100.101.122.109:19222/mcp/b1").unwrap();
         assert_eq!(moved.matches("  codync:").count(), 1, "{moved}");
         assert!(moved.contains("100.101.122.109"), "{moved}");
         assert!(!moved.contains("100.111.188.83"), "{moved}");
-        assert_eq!(with_mcp_server(&moved, "http://100.101.122.109:19222/mcp/b1"), moved, "nothing changes twice");
+        assert_eq!(with_mcp_server(&moved, "http://100.101.122.109:19222/mcp/b1").unwrap(), moved, "nothing twice");
     }
 
     #[test]
     fn a_profile_without_servers_gets_them() {
         for config in ["", "model: hermes\n", "model: hermes\nmcp_servers: {}\n"] {
-            let written = with_mcp_server(config, "http://host/mcp/b1");
+            let written = with_mcp_server(config, "http://host/mcp/b1").unwrap();
             assert_eq!(written.matches("mcp_servers:").count(), 1, "{config:?} → {written}");
             assert!(written.contains("\n  codync:\n"), "{written}");
             // A second run leaves the entry where it is.
-            assert_eq!(with_mcp_server(&written, "http://host/mcp/b1"), written);
+            assert_eq!(with_mcp_server(&written, "http://host/mcp/b1").unwrap(), written);
         }
+    }
+
+    #[test]
+    fn a_config_this_cant_edit_safely_is_left_alone() {
+        // Appending a second `mcp_servers:` would lose the profile's own servers.
+        let inline = "model: hermes\nmcp_servers: {other: {url: http://x}}\n";
+        assert!(with_mcp_server(inline, "http://host/mcp/b1").is_err());
+        // A comment after the key is still the key.
+        let commented = with_mcp_server("mcp_servers:  # mine\n", "http://host/mcp/b1").unwrap();
+        assert!(commented.contains("mcp_servers:  # mine\n  codync:\n"), "{commented}");
+    }
+
+    #[test]
+    fn a_payload_that_spells_a_placeholder_is_written_whole() {
+        // Base64 of text ending in `ENV`/`CONFIG` used to be re-substituted into the other file's place.
+        let config = "name: ENVCONFIG\n".repeat(40);
+        let env = "MCP_CODYNC_API_KEY=cdcb_x\nENV=1\n";
+        let script = write_script("codync-a", &config, env);
+        let b64 = |text: &str| {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(text)
+        };
+        assert!(script.contains(&b64(&config)), "the config goes in as it is");
+        assert!(script.contains(&b64(env)), "so does the env file");
+        assert_eq!(script.matches("base64 -d > \"$d/config.yaml\"").count(), 1);
     }
 
     #[test]
@@ -358,11 +413,19 @@ mod tests {
     #[test]
     fn a_failed_install_waits_before_the_next_try() {
         let tried = vec!["http://a/mcp/b1".to_owned()];
-        let installed =
-            |url: Option<&str>, at: i64| Installed { tried: tried.clone(), url: url.map(str::to_owned), at };
-        assert!(installed(Some("http://a/mcp/b1"), 0).holds(&tried, i64::MAX), "a working address holds");
-        assert!(!installed(None, 0).holds(&tried, RETRY_AFTER_MS + 1), "a failure is retried later");
-        assert!(installed(None, 0).holds(&tried, 1), "but not on every connection");
-        assert!(!installed(Some("http://a/mcp/b1"), 0).holds(&["http://b/mcp/b1".to_owned()], 1), "a new address");
+        let installed = |url: Option<&str>, at: i64| Installed {
+            profile: "codync-a".to_owned(),
+            tried: tried.clone(),
+            url: url.map(str::to_owned),
+            at,
+        };
+        let holds = |i: &Installed, now: i64| i.holds("codync-a", &tried, now);
+        assert!(holds(&installed(Some("http://a/mcp/b1"), 0), i64::MAX), "a working address holds");
+        assert!(!holds(&installed(None, 0), RETRY_AFTER_MS + 1), "a failure is retried later");
+        assert!(holds(&installed(None, 0), 1), "but not on every connection");
+        let other = ["http://b/mcp/b1".to_owned()];
+        assert!(!installed(Some("http://a/mcp/b1"), 0).holds("codync-a", &other, 1), "a new address");
+        // Two bots naming one profile don't count as each other's install.
+        assert!(!installed(Some("http://a/mcp/b1"), 0).holds("codync-b", &tried, 1), "another profile");
     }
 }
