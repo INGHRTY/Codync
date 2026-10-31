@@ -60,6 +60,8 @@ extension BotStore {
         guard !Task.isCancelled, !retired else { return }
         // hello first: whatever the version change shows (notices, reminders) reads it.
         hello = h
+        // The list travels with every hello: a save or delete that happened while this phone was away shows.
+        if let listed = h.connections { connections = listed }
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
     }
 
@@ -127,6 +129,8 @@ extension BotStore {
             screen = s
         case let .network(view):
             network = view
+        case let .connections(list):
+            connections = list
         case let .artifact(artifact):
             artifacts.upsert(artifact)
         case .resync:

@@ -67,9 +67,16 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    /** A Hermes gateway on another computer this bot runs on; null = an agent on this computer. */
+    val connection: String? = null,
+    /** The Hermes profile it runs as, on either side; null = the host names one from its id. */
+    val hermesProfile: String? = null,
 ) {
     /** Its band in the roster: the lead, then pinned bots, then the rest. Reordering stays inside a band. */
     val band: Int get() = when { lead -> 0; pinned -> 1; else -> 2 }
+
+    /** Runs on a Hermes gateway on another computer rather than here. */
+    val isCloud: Boolean get() = connection != null
 
     /** [agent]'s rest, unless it's over. */
     fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }

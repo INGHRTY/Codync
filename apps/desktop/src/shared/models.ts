@@ -1,5 +1,6 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
+import type { Connection } from './connections'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -62,6 +63,10 @@ export interface Bot {
   sharedMemory: boolean
   /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
   harnessMemory: boolean | null
+  /** A Hermes gateway on another computer this bot runs on; null/absent = an agent here. */
+  connection?: string | null
+  /** The Hermes profile this bot runs as, on either side; null = the host picks one from its id. */
+  hermesProfile?: string | null
   /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
   harnessMemoryShared: boolean
   /** Moves whenever memory changes, so an open memory screen fetches it again. */
@@ -114,6 +119,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     manageTeam: raw.manageTeam ?? null,
     offeredToNetwork: raw.offeredToNetwork ?? null,
     reachableByAssistants: raw.reachableByAssistants ?? null,
+    connection: raw.connection ?? null,
+    hermesProfile: raw.hermesProfile ?? null,
     createdBy: raw.createdBy ?? null,
     sharedMemory: raw.sharedMemory ?? raw.managedWorkspace ?? false,
     harnessMemory: raw.harnessMemory ?? null,
@@ -480,6 +487,8 @@ export interface Hello {
   cloud?: string | null
   /** Product analytics on this computer: on unless its owner turned it off. */
   analytics?: boolean
+  /** Hermes gateways on the user's other computers (names and addresses, never keys); absent from older hosts. */
+  connections?: Connection[] | null
 }
 
 export interface PairingInfo {
@@ -602,6 +611,10 @@ export interface BotDraft {
   reachableByAssistants?: boolean
   sharedMemory?: boolean
   harnessMemory?: boolean
+  /** A Hermes gateway this bot runs on (a connection id); null/absent = an agent on this computer. */
+  connection?: string | null
+  /** The profile it runs as there; null = the host names one from its id. */
+  hermesProfile?: string | null
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -629,6 +642,8 @@ export function draftOf(bot: Bot): BotDraft {
     manageTeam: bot.manageTeam ?? undefined,
     offeredToNetwork: bot.offeredToNetwork ?? undefined,
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
+    connection: bot.connection ?? null,
+    hermesProfile: bot.hermesProfile ?? null,
   }
 }
 

@@ -2,6 +2,12 @@ import CodyncKit
 import Foundation
 
 extension BotStore {
+    /// The Hermes gateways on the user's other computers (the cloud bots' side), read from this computer.
+    public func refreshConnections() async {
+        guard let client else { return }
+        if let listed = try? await client.listConnections() { connections = listed }
+    }
+
     public func refreshPlugins() async {
         guard let client else { return }
         async let c = client.connectors()

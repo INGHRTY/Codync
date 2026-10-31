@@ -77,6 +77,10 @@ pub struct Bot {
     pub members: Vec<String>,
     /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
+    /// The Hermes gateway on another computer this bot runs on (`remote::hermes::connections`); `None`: here.
+    pub connection: Option<String>,
+    /// The Hermes profile it runs as on either side; `None`: the host names one from its id.
+    pub hermes_profile: Option<String>,
 }
 
 /// An agent of a bot's chain that rests (`agent::fallback::resting`) until `until` (epoch ms).
@@ -154,9 +158,20 @@ impl Bot {
         }
     }
 
+    /// A bot on a gateway runs on that computer, not this one.
+    pub fn is_cloud(&self) -> bool {
+        self.connection.is_some()
+    }
+
     /// Where it works, as the header shows it.
     pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
+        if self.is_cloud() {
+            "Hermes gateway".to_owned()
+        } else if self.managed_workspace {
+            "personal workspace".to_owned()
+        } else {
+            tilde(&self.cwd, home)
+        }
     }
 
     pub(super) fn parse(v: &Value) -> Option<Self> {
@@ -216,6 +231,8 @@ impl Bot {
             group: v["kind"] == "group",
             members: strs(&v["members"]),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
+            connection: v["connection"].as_str().filter(|c| !c.is_empty()).map(str::to_owned),
+            hermes_profile: v["hermesProfile"].as_str().filter(|p| !p.is_empty()).map(str::to_owned),
         })
     }
 

@@ -16,6 +16,7 @@ mod fallbacks;
 mod forms;
 mod goto;
 mod help;
+mod hermes;
 mod lead_agent;
 mod network;
 mod network_rules;

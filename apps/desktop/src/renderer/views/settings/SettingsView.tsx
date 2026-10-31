@@ -18,6 +18,7 @@ import { StoreContext, useApp } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
 import { UpdateButton, useUpdates } from '../UpdateButton'
 import { ComputersView } from './ComputersView'
+import { ConnectionsView } from './ConnectionsView'
 import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
 import { UsageLimits } from './UsageLimits'
@@ -28,12 +29,13 @@ import { AnalyticsSheet } from './AnalyticsSheet'
 import { HiddenBotsSection } from './HiddenBotsSection'
 
 /** The chat window's Settings: pages in a sidebar, ChatGPT's settings layout. */
-export type SettingsPage = 'general' | 'computers' | 'network' | 'access' | 'voice' | 'usage' | 'updates'
+export type SettingsPage = 'general' | 'computers' | 'hermes' | 'network' | 'access' | 'voice' | 'usage' | 'updates'
 
 const thisComputer = isMac ? 'This Mac' : 'This computer'
 const pages: { id: SettingsPage; title: string; label?: string; group: string; icon: string }[] = [
   { id: 'general', title: 'General', group: 'Personal', icon: 'gearshape' },
   { id: 'computers', title: 'Computers & devices', label: 'Computers', group: thisComputer, icon: 'desktopcomputer' },
+  { id: 'hermes', title: 'Hermes connections', label: 'Hermes', group: thisComputer, icon: 'cloud' },
   { id: 'network', title: 'Network', group: thisComputer, icon: 'point.3.connected.trianglepath.dotted' },
   { id: 'access', title: 'Computer access', group: thisComputer, icon: 'hand.raised' },
   { id: 'voice', title: 'Voice chat', group: 'Personal', icon: 'waveform' },
@@ -42,7 +44,7 @@ const pages: { id: SettingsPage; title: string; label?: string; group: string; i
 ]
 
 /** Each page as `screen_viewed` names it; Computer access and Voice chat report themselves. */
-const pageScreens: Record<SettingsPage, Screen | null> = { general: 'settings', updates: 'settings', computers: 'computers', network: 'settings', usage: 'usage', access: null, voice: null }
+const pageScreens: Record<SettingsPage, Screen | null> = { general: 'settings', updates: 'settings', computers: 'computers', hermes: 'settings', network: 'settings', usage: 'usage', access: null, voice: null }
 
 /** `page` is the window's: a command (the menu bar's network rows) can turn the open sheet to another page. */
 export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (page: SettingsPage) => void }) {
@@ -98,6 +100,8 @@ function PageContent({ page }: { page: SettingsPage }) {
       return <GeneralSettings />
     case 'computers':
       return <ComputersView />
+    case 'hermes':
+      return <ConnectionsView />
     case 'network':
       return <NetworkView />
     case 'voice':

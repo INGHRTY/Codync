@@ -37,7 +37,6 @@ export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer,
 /** Live activity while working, otherwise the last message (Grok Bot row behavior). */
 function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
   const tr = useTr()
-  const place = bot.managedWorkspace ? tr('Personal workspace') : folderName(bot)
   if (needsInput(bot)) {
     return (
       <HStack as="span" gap={6} shrink>
@@ -55,5 +54,10 @@ function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
     )
   }
   if (bot.status === 'error') return <Text size="callout" tone="danger" truncate>{messagePreview(bot.lastMessage ?? tr(`Something went wrong`))}</Text>
+  const place = bot.connection
+    ? tr('Hermes gateway')
+    : bot.managedWorkspace
+      ? tr('Personal workspace')
+      : folderName(bot)
   return <Text size="callout" tone="secondary" truncate>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? `${bot.members.length} bots` : `${store.backendName(bot.backend)} · ${place}`))}</Text>
 }

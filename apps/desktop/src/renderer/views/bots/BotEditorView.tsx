@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
 import { draftOf, type Bot, type BotDraft, type DirListing } from '@shared/models'
+import { isCloud } from '@shared/connections'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
 import { CardSection, ChoicePicker, DropdownMenu, IconButton, Pill, SearchField, Spinner, ValueRow } from '../../components/Controls'
@@ -18,6 +19,7 @@ import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
 import { NetworkSwitches } from './NetworkSwitches'
+import { GatewayModelRow, RunLocationSwitch } from './RunLocation'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
 
@@ -133,13 +135,21 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const connectors = plugins?.connectors ?? []
   const skills = plugins?.skills ?? []
 
+  const location = (
+    <RunLocationSwitch key="location" draft={draft} set={set} />
+  )
   const instructions = (
     <Field label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
       <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
     </Field>
   )
   const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
-  const agent = (
+  // A bot on a gateway runs Hermes there: its models come from that gateway, and nothing that needs a local
+  // process (fallbacks, fast mode, this computer's agent) applies.
+  const cloud = isCloud(draft)
+  const agent = cloud ? (
+    <GatewayModelRow key="gateway" draft={draft} set={set} />
+  ) : (
     <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
       onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}
       agents={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
@@ -153,8 +163,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   )
   // While the bot runs on a fallback, the Agent card starts with it.
   const step = saved?.agentStep ? <AgentStepBanner key="step" bot={saved} /> : null
-  // Only from a host that has them (its bots say).
-  const fallbacks = saved && saved.selfFallbacks !== null ? [
+  // Only from a host that has them (its bots say), and never for a gateway bot: it has no local process.
+  const fallbacks = saved && saved.selfFallbacks !== null && !cloud ? [
     <FallbacksRow key="fallbacks" draft={draft} bot={saved} onChange={onChange} />,
     <SwitchRow
       key="self"
@@ -172,6 +182,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           <CardSection title="Instructions">{instructions}</CardSection>
           <CardSection title="Agent">
             {step}
+            {location}
             {agent}
             {fallbacks}
           </CardSection>
@@ -206,12 +217,15 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         {/* In the inspector the agent and its model are on the Details tab; what's left is where it works. */}
         <CardSection title={part === 'all' ? 'Agent' : 'Workspace'}>
           {part === 'all' ? step : null}
-          <ValueRow label="Computer">
-            <Text truncate>{store.hostName}</Text>
-          </ValueRow>
+          {part === 'all' ? location : null}
           {part === 'all' ? agent : null}
           {part === 'all' ? fallbacks : null}
-          <ValueRow
+          {cloud ? (
+            <Text size="caption" tone="secondary">
+              {tr('It works in the gateway\'s own Hermes profile: this computer\'s folders, apps, connectors and skills stay here.')}
+            </Text>
+          ) : null}
+          {!cloud && <ValueRow
             label="Workspace"
             detail={
               draft.cwd
@@ -231,7 +245,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
                 <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
               </Pill>
             </DropdownMenu>
-          </ValueRow>
+          </ValueRow>}
           <ValueRow
             label="Permissions"
             detail={
@@ -253,7 +267,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
 
         <CardSection title="Activity">
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />
-          {store.screen && part === 'all' ? (
+          {store.screen && part === 'all' && !cloud ? (
             <SwitchRow
               title="Use the computer"
               detail={
@@ -270,7 +284,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             />
           ) : null}
           {/* Only from a host that has it (its bots say). */}
-          {[...store.bots.values()].some((b) => b.manageTeam !== null) ? (
+          {!cloud && [...store.bots.values()].some((b) => b.manageTeam !== null) ? (
             <SwitchRow
               title="Manage the team"
               detail="Let this bot create bots and change any bot's setup, its own included. The bots it creates can too."
@@ -281,21 +295,26 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           <NetworkSwitches draft={draft} set={set} />
         </CardSection>
 
-        <PluginToggles
-          title="Connectors"
-          empty="No connectors yet. Add GitHub, Linear, Notion and more from Extensions."
-          items={connectors.map((c) => ({ id: c.id, name: c.name, detail: c.command ?? c.url ?? '' }))}
-          selection={draft.connectors ?? []}
-          onChange={(ids) => set('connectors', ids)}
-        />
-        <PluginToggles
-          title="Skills"
-          empty="No skills yet. Get some from Extensions, or write your own."
-          items={skills.map((s) => ({ id: s.id, name: s.name, detail: s.description }))}
-          selection={draft.skills ?? []}
-          onChange={(ids) => set('skills', ids)}
-          onInfo={(s) => setViewingSkill({ id: s.id, name: s.name, description: s.detail })}
-        />
+        {/* Connectors and skills are this computer's (MCP servers on loopback, files here): a gateway bot has none. */}
+        {cloud ? null : (
+          <>
+            <PluginToggles
+              title="Connectors"
+              empty="No connectors yet. Add GitHub, Linear, Notion and more from Extensions."
+              items={connectors.map((c) => ({ id: c.id, name: c.name, detail: c.command ?? c.url ?? '' }))}
+              selection={draft.connectors ?? []}
+              onChange={(ids) => set('connectors', ids)}
+            />
+            <PluginToggles
+              title="Skills"
+              empty="No skills yet. Get some from Extensions, or write your own."
+              items={skills.map((s) => ({ id: s.id, name: s.name, detail: s.description }))}
+              selection={draft.skills ?? []}
+              onChange={(ids) => set('skills', ids)}
+              onInfo={(s) => setViewingSkill({ id: s.id, name: s.name, description: s.detail })}
+            />
+          </>
+        )}
         {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
       </div>
       <FormSheet open={viewingSkill !== null} onClose={() => setViewingSkill(null)}>

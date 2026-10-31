@@ -200,6 +200,7 @@ export class BotSync extends BotMirror {
     this.hello = h
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
     if (this.isLoopback) this.updateComputer((c) => ({ ...c, name: h.name, device: h.device ?? c.device }))
+    if (h.connections) this.connections = h.connections
     this.changed()
   }
 
@@ -265,6 +266,9 @@ export class BotSync extends BotMirror {
         break
       case 'network':
         this.network = event.network
+        break
+      case 'connections':
+        this.connections = event.connections
         break
       case 'call': {
         const { cue } = event

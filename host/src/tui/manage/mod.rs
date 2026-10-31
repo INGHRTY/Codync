@@ -9,6 +9,7 @@ mod agent;
 mod analytics;
 mod bot_chat;
 mod fields;
+pub mod hermes;
 mod library;
 mod market;
 mod memory;
@@ -75,6 +76,12 @@ pub enum Reply {
     FieldsSaved,
     SignIn,
     Models(String),
+    /// The gateways list (`hermes`).
+    Connections,
+    GatewaySaved,
+    /// `testConnection`: the profile it checked and its models.
+    GatewayTested,
+    GatewayRemoved,
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,

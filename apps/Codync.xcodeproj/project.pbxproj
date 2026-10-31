@@ -45,6 +45,7 @@
 		7C20764DC05D499075BC5E8C /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65FE0504B741D0B44DB2516 /* CodyncApp.swift */; };
 		7E5F670CFFA0E4373F44DB41 /* AccountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31BFDAD6DCCE1CC98642ACDD /* AccountSession.swift */; };
 		8157F3E9CFB390CBCB1A9F9A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4815867922559696EDCA47FD /* Assets.xcassets */; };
+		8480A1E7D9204F8015619558 /* HermesConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53E5FD29CC74D9608A1AAC8 /* HermesConnectionsView.swift */; };
 		8517F8FC5AFAFF1527369829 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6932F782C1B87C9608359A6 /* NotificationService.swift */; };
 		89CA3972915769DBA315876F /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3BF4D3B82FE8274F610C703 /* Push.swift */; };
 		8B5CCF45DEE9149BB11333C4 /* CodyncBot-pebble-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F4375A206703EC65F0D15BD6 /* CodyncBot-pebble-Ink.ttf */; };
@@ -122,7 +123,7 @@
 		0C44BCF971511A5E94D073D5 /* CodyncOrb-Dot.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncOrb-Dot.ttf"; sourceTree = "<group>"; };
 		120FD9DBA315A6DD543463D8 /* CodyncBot-tablet-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-tablet-Ink.ttf"; sourceTree = "<group>"; };
 		1318104275E5BEC47B7088AD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		1BDF6A8F94A945065D4348F8 /* AppIcon.icon */ = {isa = PBXFileReference; path = AppIcon.icon; sourceTree = "<group>"; };
+		1BDF6A8F94A945065D4348F8 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		1FECC371F3CD98687C0B69FA /* CodyncBot-pebble-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-pebble-Tint.ttf"; sourceTree = "<group>"; };
 		203A43D8DF8D3832F95FA837 /* CodyncBot-teardrop-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-teardrop-Ink.ttf"; sourceTree = "<group>"; };
@@ -159,6 +160,7 @@
 		AAD970B8394F4EDFB85A8936 /* CodyncBot-cloud-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-cloud-Tint.ttf"; sourceTree = "<group>"; };
 		AD18A04CD014230F1B7B0535 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B274A0195CB3B2409EA4C194 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		B53E5FD29CC74D9608A1AAC8 /* HermesConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConnectionsView.swift; sourceTree = "<group>"; };
 		B6E13F8EA6C7B0DA4D899FEE /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		B708DF60FB00E1724260BCD2 /* RowLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RowLabel.swift; sourceTree = "<group>"; };
 		B97102DEC6029268332DF901 /* AccessRequestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRequestView.swift; sourceTree = "<group>"; };
@@ -311,6 +313,7 @@
 				0582B6169BFC36E4BCD51C0D /* BotListView.swift */,
 				6BC00039A6C2C0D3F39A5F67 /* ComputerStatus.swift */,
 				E3E35BCE6E7037B78D22F927 /* ComputersView.swift */,
+				B53E5FD29CC74D9608A1AAC8 /* HermesConnectionsView.swift */,
 				73D324231A9BCE79C84C0403 /* LanguageSettings.swift */,
 				6FC76D28AB02DF1427D530ED /* LaunchSplash.swift */,
 				ECD0B4EA4BBA2BB2826C4362 /* PairingView.swift */,
@@ -542,7 +545,6 @@
 				};
 			};
 			buildConfigurationList = F977CF173B7D60769B393751 /* Build configuration list for PBXProject "Codync" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -557,13 +559,14 @@
 				1971A679A8497DA8D0C8B77A /* XCLocalSwiftPackageReference "ios/Kit" */,
 			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 3EC1FDCCFFFB4BA1A23FDDB0 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				C42E5E078332C6C2B35AF5FA /* NotificationService */,
 				907F1F4A709111FC7178EAE9 /* Screen */,
-				A27E4E88D6A5B9850734B594 /* Widgets */,
 				913BDA9F79CE8C35A9E35830 /* iOS */,
+				A27E4E88D6A5B9850734B594 /* Widgets */,
+				C42E5E078332C6C2B35AF5FA /* NotificationService */,
 			);
 		};
 /* End PBXProject section */
@@ -701,6 +704,7 @@
 				7C20764DC05D499075BC5E8C /* CodyncApp.swift in Sources */,
 				2002C16E427B4E4E7279E1C4 /* ComputerStatus.swift in Sources */,
 				AC044B31C0B4A68463B9024E /* ComputersView.swift in Sources */,
+				8480A1E7D9204F8015619558 /* HermesConnectionsView.swift in Sources */,
 				5A56EF5D36D12ACCEA100642 /* LanguageSettings.swift in Sources */,
 				35CFB641A4F10C0EBD21CB14 /* LaunchSplash.swift in Sources */,
 				E695251CFD06AC6F4E3396B7 /* OpenBotIntent.swift in Sources */,

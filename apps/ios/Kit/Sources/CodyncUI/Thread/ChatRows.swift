@@ -93,6 +93,13 @@ struct AuthorLabel: View {
             Text(model.authorName(botId, fallback: name))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(bot.map { AvatarPalette.color($0.avatarColor) } ?? Palette.secondary)
+            // A room shows which side answered: the gateway, not this computer.
+            if let bot, bot.isCloud {
+                Image(systemName: "cloud")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.secondary)
+                    .accessibilityLabel(L10n.tr("Runs on a Hermes gateway"))
+            }
         }
     }
 }

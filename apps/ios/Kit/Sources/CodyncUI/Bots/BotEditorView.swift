@@ -104,8 +104,13 @@ struct BotSettingsForm: View {
             CardSection("Instructions") { instructions }
             CardSection("Agent") {
                 fallbackBanner
-                modelPicker
-                fallbackList
+                RunLocationRows(draft: $draft)
+                if draft.isCloud {
+                    GatewayModelRow(draft: $draft)
+                } else {
+                    modelPicker
+                    fallbackList
+                }
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
             if let error {
@@ -181,33 +186,47 @@ struct BotSettingsForm: View {
             CardSection(part == .all ? "Agent" : "Workspace") {
                 if part == .all { fallbackBanner }
                 ValueRow("Computer") {
-                    Text(model.hostName).lineLimit(1)
+                    // A gateway bot works on that computer, not this one.
+                    Text(draft.isCloud ? (model.connections.first { $0.id == draft.connection }?.name ?? L10n.tr("Gateway")) : model.hostName)
+                        .lineLimit(1)
                 }
+                if part == .all { RunLocationRows(draft: $draft) }
                 if part == .all {
+                    if draft.isCloud {
+                        GatewayModelRow(draft: $draft)
+                    } else {
                         modelPicker
-                    fallbackList
-                }
-                ValueRow("Workspace", detail: draft.cwd.isEmpty
-                         ? "This bot has its own space for files. It can work in other folders when you ask."
-                         : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
-                    DropdownMenu {
-                        [
-                            MenuItem("Personal workspace", selected: draft.cwd.isEmpty) {
-                                withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.cwd = "" }
-                            },
-                            MenuItem("Choose project folder…", selected: !draft.cwd.isEmpty) {
-                                withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingFolder = true }
-                            },
-                        ]
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(draft.cwd.isEmpty ? L10n.tr("Personal") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
-                            Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
-                        }
-                        .foregroundStyle(Palette.text)
-                        .outlinedPill()
+                        fallbackList
                     }
-                    .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
+                }
+                if draft.isCloud {
+                    Text(L10n.tr("It works in the gateway's own Hermes profile: this computer's folders, apps, connectors and skills stay here."))
+                        .font(.caption)
+                        .foregroundStyle(Palette.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ValueRow("Workspace", detail: draft.cwd.isEmpty
+                             ? "This bot has its own space for files. It can work in other folders when you ask."
+                             : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
+                        DropdownMenu {
+                            [
+                                MenuItem("Personal workspace", selected: draft.cwd.isEmpty) {
+                                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.cwd = "" }
+                                },
+                                MenuItem("Choose project folder…", selected: !draft.cwd.isEmpty) {
+                                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingFolder = true }
+                                },
+                            ]
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(draft.cwd.isEmpty ? L10n.tr("Personal") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
+                                Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
+                            }
+                            .foregroundStyle(Palette.text)
+                            .outlinedPill()
+                        }
+                        .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
+                    }
                 }
                 ValueRow("Permissions", detail: draft.permission == "auto"
                          ? "Tool requests are approved automatically. Your agent's own settings (like Claude Code's permission rules) still apply."
@@ -220,7 +239,7 @@ struct BotSettingsForm: View {
             CardSection("Activity") {
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))
-                if model.screen != nil, part == .all {
+                if model.screen != nil, part == .all, !draft.isCloud {
                     SwitchRow("Use the computer", detail: model.screen?.controlReady != true
                         ? "Let this bot use apps. On that computer, open Codync → Settings → Computer access to set up permissions first."
                         : model.screen?.enabled == true
@@ -231,7 +250,7 @@ struct BotSettingsForm: View {
                               isOn: Binding(get: { draft.computer ?? false }, set: { draft.computer = $0 }))
                 }
                 // Only from a host that has it (its bots say).
-                if model.bots.values.contains(where: { $0.manageTeam != nil }) {
+                if !draft.isCloud, model.bots.values.contains(where: { $0.manageTeam != nil }) {
                     SwitchRow("Manage the team", detail: "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.",
                               isOn: Binding(get: { draft.manageTeam ?? false }, set: { draft.manageTeam = $0 }))
                 }
@@ -246,19 +265,22 @@ struct BotSettingsForm: View {
                 }
             }
 
-            PluginToggles(
-                title: "Connectors",
-                empty: "No connectors yet. Add GitHub, Linear, Notion and more from Extensions.",
-                items: model.installedConnectors.map { ($0.id, $0.name, $0.command ?? $0.url ?? "") },
-                selection: Binding(get: { draft.connectors ?? [] }, set: { draft.connectors = $0 })
-            )
-            PluginToggles(
-                title: "Skills",
-                empty: "No skills yet. Get some from Extensions, or write your own.",
-                items: model.installedSkills.map { ($0.id, $0.name, $0.description) },
-                selection: Binding(get: { draft.skills ?? [] }, set: { draft.skills = $0 }),
-                info: { id in viewingSkill = model.installedSkills.first { $0.id == id }.map(SkillRef.init) }
-            )
+            // Connectors and skills are this computer's (MCP servers on loopback, files here): a gateway bot has none.
+            if !draft.isCloud {
+                PluginToggles(
+                    title: "Connectors",
+                    empty: "No connectors yet. Add GitHub, Linear, Notion and more from Extensions.",
+                    items: model.installedConnectors.map { ($0.id, $0.name, $0.command ?? $0.url ?? "") },
+                    selection: Binding(get: { draft.connectors ?? [] }, set: { draft.connectors = $0 })
+                )
+                PluginToggles(
+                    title: "Skills",
+                    empty: "No skills yet. Get some from Extensions, or write your own.",
+                    items: model.installedSkills.map { ($0.id, $0.name, $0.description) },
+                    selection: Binding(get: { draft.skills ?? [] }, set: { draft.skills = $0 }),
+                    info: { id in viewingSkill = model.installedSkills.first { $0.id == id }.map(SkillRef.init) }
+                )
+            }
             if let error {
                 Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
             }
@@ -345,12 +367,23 @@ private struct FieldBox: ViewModifier {
 
 extension BotDraft {
     /// A saved bot keeps a name; only a new one goes without (the host names it after its first conversations).
-    var isValid: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// A bot on a gateway needs that gateway chosen.
+    var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty && (connection.map { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? true)
+    }
 
-    /// What the host should get: no stale command unless the agent is custom.
+    /// What the host should get: a cloud bot always runs Hermes there, and no stale command unless the agent is custom.
     var normalized: BotDraft {
         var d = self
-        if d.backend != "custom" { d.command = nil }
+        if d.connection != nil {
+            d.backend = "hermes"
+            d.command = nil
+        } else if d.backend != "custom" {
+            d.command = nil
+        }
         return d
     }
+
+    /// Whether it runs on a gateway rather than on its own computer.
+    var isCloud: Bool { connection != nil }
 }

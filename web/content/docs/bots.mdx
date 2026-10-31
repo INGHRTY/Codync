@@ -39,6 +39,24 @@ You can also ask a bot in its chat to rename itself or change its own instructio
 
 Changing the agent or the model starts a new agent session. The chat history stays.
 
+## Runs on: this computer or a Hermes gateway
+
+A bot runs on this computer by default. It can also run on a **Hermes gateway**: a Hermes install on a computer you keep running, such as your VPS. Its bot then works on that computer, not this one, and answers here beside this computer's bots, in the same chats and group chats.
+
+Add a gateway once, from the computer that runs Codync's host:
+
+- **Desktop:** **Settings → Hermes connections**, then **Add gateway**: a name, its base URL (`https://vps.example.com`), the profile its plain routes serve (usually `default`), and the key that profile answers with. **Test connection** checks it and lists the models it offers.
+- **Terminal UI:** press `H`, then `n`.
+- **iPhone and Android:** read-only. Phones list the gateways and the bots on each, with their profiles; adding one and typing its key happens on the computer.
+
+Then open the bot's settings and set **Runs on** to that gateway. A bot on a gateway:
+
+- runs as Hermes there, in its own **Profile**, so its memory, skills and sessions stay apart from every other bot's. Codync makes the profile on the gateway the first time the bot needs it; type a name to choose one, or leave it empty for one Codync names from the bot's id;
+- has no workspace, Fast mode, fallbacks or agent of this computer to pick: its model is what the gateway's profile offers;
+- can join group chats with this computer's bots, but can't be the lead bot, manage the team, or use this computer's connectors and skills.
+
+A cloud bot is marked with a cloud: on its avatar in the bot list, beside its name in a group chat, and as `[cloud]` in its row in the terminal UI. Gateways are only on the computer whose host has them: another computer sees its own list.
+
 ## Workspace: its own folder or a project
 
 The **Workspace** setting is the folder the bot starts in.

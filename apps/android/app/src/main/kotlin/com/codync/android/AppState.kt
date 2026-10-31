@@ -53,6 +53,8 @@ data class AppState(
     val screen: ScreenState? = null,
     /** The computer's network as phones see it (`null`: the host predates it). */
     val network: NetworkView? = null,
+    /** The Hermes gateways on the user's other computers (the cloud bots' side); empty from a host that predates them. */
+    val connections: List<HermesConnection> = emptyList(),
     /** The remote screen viewer is open (`codync://screen`, the chat header, Computers). */
     val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */

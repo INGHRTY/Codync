@@ -317,6 +317,7 @@ impl App {
             }
             KeyCode::Char('P') => self.open_pair(),
             KeyCode::Char('N') => self.open_network(),
+            KeyCode::Char('H') => self.open_hermes(),
             KeyCode::Char('s') => {
                 if let Some(b) = self.bot() {
                     if matches!(b.status, Status::Working | Status::NeedsInput) {

@@ -5,8 +5,8 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 use super::{
-    After, App, Bot, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, Overlay, PairCode, SHAPES, Toggle,
-    cycle, merge_toggles,
+    After, App, Bot, COLORS, Editor, Field, Form, GroupField, GroupForm, Overlay, PairCode, SHAPES, Toggle, cycle,
+    merge_toggles,
 };
 use crate::tui::manage::Page;
 
@@ -129,6 +129,8 @@ impl App {
             name: Editor::with(&b.name),
             instructions: Editor::with(&b.description),
             backend: b.backend.clone(),
+            connection: b.connection.clone(),
+            profile: Editor::with(b.hermes_profile.as_deref().unwrap_or_default()),
             model: Editor::with(b.model.as_deref().unwrap_or_default()),
             model_options: (b.model.clone().unwrap_or_default(), b.model_options.clone()),
             fast: b.fast_mode,
@@ -161,6 +163,11 @@ impl App {
     }
 
     pub(super) fn form_key(&mut self, mut f: Box<Form>, k: KeyEvent) -> Option<Overlay> {
+        // A cloud bot has no local agent process: the fields that need one never take a key.
+        if !f.shows(f.current()) {
+            f.step(1);
+            f.sub = 0;
+        }
         if let Some(page) = Page::Settings.step(k) {
             if f.dirty() {
                 f.error = Some("Save with ^S first, or Esc to drop the changes.".into());
@@ -180,11 +187,11 @@ impl App {
                 self.save_form(&mut f);
             }
             KeyCode::Tab | KeyCode::Down => {
-                f.field = (f.field + 1) % FIELDS.len();
+                f.step(1);
                 f.sub = 0;
             }
             KeyCode::BackTab | KeyCode::Up => {
-                f.field = (f.field + FIELDS.len() - 1) % FIELDS.len();
+                f.step(-1);
                 f.sub = 0;
             }
             KeyCode::Enter
@@ -227,6 +234,7 @@ impl App {
                 if matches!(
                     field,
                     Field::Agent
+                        | Field::RunOn
                         | Field::Fast
                         | Field::SelfFallbacks
                         | Field::Approvals
@@ -245,6 +253,7 @@ impl App {
                 let d: isize = if k.code == KeyCode::Left { -1 } else { 1 };
                 let space = k.code == KeyCode::Char(' ');
                 match field {
+                    Field::RunOn => self.run_on_key(&mut f, d),
                     Field::Agent if !space => {
                         let ids = self.agent_choices();
                         if !ids.is_empty() {
@@ -332,6 +341,26 @@ impl App {
         self.call("updateBot", body, After::Saved);
     }
 
+    /// ←→ on Runs on: this computer, then each gateway; a cloud bot is Hermes there, in its own profile.
+    fn run_on_key(&mut self, f: &mut Form, d: isize) {
+        let ids = &self.connections;
+        let current = f.connection.clone();
+        let choices = ids.len() + 1;
+        let i =
+            current.as_ref().and_then(|id| ids.iter().position(|c| c["id"].as_str() == Some(id))).map_or(0, |i| i + 1);
+        let next = cycle(i, d, choices);
+        f.connection = (next > 0).then(|| ids[next - 1]["id"].as_str().unwrap_or_default().to_owned());
+        if f.cloud() {
+            // A gateway bot is Hermes there: another agent's model and chain mean nothing.
+            "hermes".clone_into(&mut f.backend);
+            f.model.clear();
+            f.model_options = Default::default();
+            f.fallbacks.clear();
+            f.cwd.clear();
+            f.fast = false;
+        }
+    }
+
     /// Agents a bot can switch to: runnable ones on this computer first.
     pub(super) fn agent_choices(&self) -> Vec<String> {
         let mut v: Vec<&Value> = self
@@ -348,16 +377,19 @@ impl Form {
     /// The bot as this form would save it.
     fn body(&self) -> Value {
         let model = self.model.text.trim();
+        let profile = self.profile.text.trim().to_ascii_lowercase();
         json!({
             "name": self.name.text.trim(),
             "description": self.instructions.text.trim(),
-            "backend": self.backend,
-            "cwd": self.cwd,
+            "backend": if self.cloud() { "hermes" } else { self.backend.as_str() },
+            "connection": self.connection,
+            "hermesProfile": (!profile.is_empty()).then_some(profile),
+            "cwd": if self.cloud() { "" } else { self.cwd.as_str() },
             "permission": if self.auto { "auto" } else { "ask" },
             "model": if model.is_empty() { Value::Null } else { model.into() },
             "modelOptions": self.model_options().cloned().unwrap_or_default(),
-            "fastMode": self.fast,
-            "fallbacks": self.fallbacks,
+            "fastMode": self.fast && !self.cloud(),
+            "fallbacks": if self.cloud() { Vec::new() } else { self.fallbacks.clone() },
             "selfFallbacks": self.self_fallbacks,
             "notify": self.notify,
             "computer": self.computer,
@@ -389,7 +421,7 @@ impl Form {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AgentModel, test_app};
+    use super::super::{AgentModel, FIELDS, test_app};
     use super::*;
 
     #[tokio::test]
@@ -460,6 +492,35 @@ mod tests {
             let changed = f.changes();
             assert_eq!(changed.get("offeredToNetwork").cloned(), offered.map(Value::from), "{changed}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_gateway_bot_is_hermes_there_in_its_own_profile() {
+        let mut app = test_app();
+        app.connections = vec![json!({"id": "vps", "name": "VPS", "baseUrl": "https://vps.example.com"})];
+        let bot = json!({"id": "b", "name": "Reviewer", "backend": "claude", "fastMode": true, "cwd": "/tmp/work",
+            "fallbacks": [{"backend": "codex"}]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::RunOn).expect("a run-on field");
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Right)) else { panic!("stays") };
+        assert_eq!(f.connection.as_deref(), Some("vps"));
+        assert!(!f.shows(Field::Agent) && !f.shows(Field::Fast) && f.shows(Field::Profile));
+        let saved = f.body();
+        assert_eq!(saved["backend"], "hermes");
+        assert_eq!(saved["connection"], "vps");
+        assert_eq!(saved["fastMode"], false);
+        assert_eq!(saved["cwd"], "");
+        assert_eq!(saved["fallbacks"], json!([]), "a gateway bot can't fall back");
+        // Back to this computer: the fields it had come back.
+        let Some(Overlay::Form(mut f)) = app.form_key(f, KeyEvent::from(KeyCode::Left)) else { panic!("stays") };
+        assert!(f.connection.is_none());
+        assert!(f.shows(Field::Fast));
+        f.profile = Editor::with("Named");
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Right)) else { panic!("stays") };
+        assert_eq!(f.body()["hermesProfile"], "named", "profiles are lowercase");
     }
 
     #[test]

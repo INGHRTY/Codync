@@ -45,12 +45,17 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let mut y = inner.y + 1;
     let agent_name = app.agent_name(&f.backend);
     for (i, field) in FIELDS.iter().enumerate() {
+        if !f.shows(*field) {
+            continue;
+        }
         let active = i == f.field;
         let base = if active { t.sel } else { t.panel };
         let lab = match field {
             Field::Name => "Name",
             Field::Instructions => "Instructions",
             Field::Agent => "Agent",
+            Field::RunOn => "Runs on",
+            Field::Profile => "Profile",
             Field::Model => "Model",
             Field::ModelOptions => "Options",
             Field::Fast => "Fast mode",
@@ -103,6 +108,31 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Instructions => {
                 let hint = tr("e.g. Reviews PRs. Never pushes without asking.");
                 text_field(buf, &f.instructions, &hint, y);
+            }
+            Field::RunOn => {
+                let name = match &f.connection {
+                    Some(id) => app
+                        .connections
+                        .iter()
+                        .find(|c| c["id"].as_str() == Some(id.as_str()))
+                        .and_then(|c| c["name"].as_str())
+                        .unwrap_or("a gateway")
+                        .to_owned(),
+                    None => tr("This computer").into_owned(),
+                };
+                let shown = if app.connections.is_empty() {
+                    format!("{name}  · {}", tr("add your VPS in H"))
+                } else {
+                    format!("‹ {name} ›")
+                };
+                put(buf, vx, y, vw, &shown, t.text.patch(base));
+            }
+            Field::Profile => {
+                let profile = match f.profile.text.trim() {
+                    "" => super::super::manage::hermes::profile_of(&f.bot_id, None),
+                    named => named.to_ascii_lowercase(),
+                };
+                text_field(buf, &f.profile, &profile, y);
             }
             Field::Model => {
                 text_field(buf, &f.model, "default", y);
@@ -306,6 +336,18 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     } else if f.current() == Field::SelfFallbacks {
         let line = tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.");
         put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
+    } else if f.current() == Field::RunOn {
+        let line = if f.cloud() {
+            tr("On the gateway, in its own Hermes profile: it works on that computer, not this one.")
+        } else {
+            tr("As an agent process on this computer.")
+        };
+        put(buf, inner.x, by - 1, inner.width, line.as_ref(), t.dim.patch(t.panel));
+    } else if f.current() == Field::Profile {
+        let line = tr(
+            "One profile per bot keeps its memory, skills and sessions apart. Codync makes it on the gateway the first time the bot needs it.",
+        );
+        put(buf, inner.x, by - 1, inner.width, line.as_ref(), t.dim.patch(t.panel));
     } else if f.current() == Field::Team {
         let line =
             "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.";
@@ -322,6 +364,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {
+        Field::RunOn => "←→ this computer / a gateway · tab next",
+        Field::Profile => "one profile per bot: its memory, skills and sessions stay apart · tab next",
         Field::Folder => "↵ project folder · backspace personal · tab next field",
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
@@ -404,8 +448,11 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         put(buf, inner.x, y, 2, if on { "☑" } else { "☐" }, if on { t.bold } else { t.dim }.patch(base));
         put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
         put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
-        let folder = if b.managed_workspace {
-            "personal".to_owned()
+        // Which side it runs on: a room can hold this computer's bots and a gateway's together.
+        let folder = if b.is_cloud() {
+            tr("on a gateway").into_owned()
+        } else if b.managed_workspace {
+            tr("personal").into_owned()
         } else {
             std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
         };

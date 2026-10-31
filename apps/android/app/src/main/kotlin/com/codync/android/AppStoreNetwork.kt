@@ -3,6 +3,7 @@ package com.codync.android
 import com.codync.android.core.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.update
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.coroutines.launch
 
 // The computer's network as this phone sees it: read-only, from the stream's hello, kept current by its event.
@@ -28,4 +29,29 @@ internal fun AppStore.receiveNetwork(events: List<MirrorEvent>) {
         is MirrorEvent.Network -> mutableState.update { it.copy(network = last.view) }
         else -> {}
     }
+}
+
+/**
+ * Reads the Hermes gateways again (the sheet opening, or a phone asking a computer that answered before the
+ * `connections` event). The list travels with `hello` and with its event; a failed read keeps what is shown.
+ */
+internal fun AppStore.refreshConnections() {
+    val active = channel?.takeIf { it.state.value is LinkState.Ready } ?: return
+    contextScope.launch {
+        val list = try {
+            val answer = active.call("listConnections")
+            WireJson.decodeFromJsonElement<List<HermesConnection>>(answer.getValue("connections"))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            android.util.Log.i("Codync", "Connections failed: ${error.message}")
+            return@launch
+        }
+        mutableState.update { it.copy(connections = list) }
+    }
+}
+
+/** `connections` events (and the list `hello` carries) change the gateways this phone shows. */
+internal fun AppStore.receiveConnections(events: List<MirrorEvent>) {
+    val last = events.lastOrNull { it is MirrorEvent.Connections } ?: return
+    mutableState.update { it.copy(connections = (last as MirrorEvent.Connections).list) }
 }

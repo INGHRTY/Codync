@@ -67,6 +67,8 @@ public final class BotStore {
     public internal(set) var screen: ScreenState?
     /// The computer's network of the user's computers (`nil`: the host predates it).
     public internal(set) var network: NetworkView?
+    /// The Hermes gateways on the user's other computers (empty from a host that predates them).
+    public internal(set) var connections: [HermesConnection] = []
     /// Installed on the computer, for the Plugins screen and bot settings.
     public internal(set) var installedConnectors: [InstalledConnector] = []
     public internal(set) var installedSkills: [InstalledSkill] = []

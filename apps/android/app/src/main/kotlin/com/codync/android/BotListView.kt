@@ -238,7 +238,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
         bot.status == "error" -> Text(messagePreview(bot.lastMessage ?: "Something went wrong"), style = Type.subheadline, color = Palette.danger,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         else -> Text(messagePreview(bot.lastMessage ?: if (bot.kind == "group") "${bot.members.size} bots"
-            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) tr("Personal workspace") else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
+            else "${backendName(state, bot.backend)} · ${when { bot.isCloud -> tr("Hermes gateway"); bot.managedWorkspace -> tr("Personal workspace"); else -> bot.cwd.trimEnd('/').substringAfterLast('/') }}"),
             style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

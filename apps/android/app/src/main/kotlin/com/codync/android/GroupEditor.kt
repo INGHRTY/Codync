@@ -105,6 +105,8 @@ import com.codync.android.design.*
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         BotAvatar(bot, bots, 32.dp)
         Text(bot.name, Modifier.weight(1f), style = Type.body, color = if (dimmed) Palette.secondary else Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // A room can hold this computer's bots and a gateway's together.
+        if (bot.isCloud) Symbol("cloud", size = 13.dp, tint = Palette.secondary, contentDescription = tr("Runs on a Hermes gateway"))
         trailing()
     }
 }

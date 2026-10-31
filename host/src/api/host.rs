@@ -74,12 +74,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "device": tokio::task::spawn_blocking(crate::service::device).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
                 "backends": backends::list(),
-                // Hermes gateways on the user's other computers (loopback only; phones see bots, not keys).
-                "connections": if matches!(caller, Caller::Local) {
-                    json!(crate::remote::hermes::connections::load(&hub.store))
-                } else {
-                    Value::Null
-                },
+                // Hermes gateways on the user's other computers: names and addresses, never their keys (those
+                // stay in this computer's vault).
+                "connections": json!(crate::remote::hermes::connections::load(&hub.store)),
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),

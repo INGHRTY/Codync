@@ -12,6 +12,7 @@ import {
 } from '@shared/models'
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
+import type { Connection as Gateway } from '@shared/connections'
 import type { NetworkView } from '@shared/network'
 
 /** How a client reaches a host API. Only loopback today: the computer's own host or an SSH tunnel. */
@@ -77,6 +78,8 @@ export type HostEvent =
   | { type: 'cloud'; cloud: CloudStatus }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
   | { type: 'network'; network: NetworkView }
+  /** The Hermes gateways the user set up changed (saved, deleted or just verified). */
+  | { type: 'connections'; connections: Gateway[] }
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
   | { type: 'call'; cue: CallCue }
   | { type: 'resync' }
@@ -128,6 +131,8 @@ export function parseEvent(line: string): HostEvent | null {
       return raw.cloud ? { type, cloud: raw.cloud as CloudStatus } : null
     case 'network':
       return raw.network ? { type, network: raw.network as NetworkView } : null
+    case 'connections':
+      return { type, connections: (raw.connections as Gateway[] | undefined) ?? [] }
     case 'call': {
       const cue = parseCallCue(raw)
       return cue ? { type, cue } : null

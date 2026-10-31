@@ -102,7 +102,17 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         let (pv, ps) = preview(b);
         let badge = if b.unread > 0 { format!(" {} ", b.unread) } else { String::new() };
         let room = usize::from(wd.saturating_sub(7)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
-        put(buf, x0 + 5, yy + 1, u(room), &truncate(&pv, room), ps);
+        // Which side it runs on, when it isn't this computer (which most are).
+        let side = if b.is_cloud() { side_badge(b) } else { String::new() };
+        let side_w = w(&side);
+        let shown = if side_w < room {
+            let text_room = room.saturating_sub(side_w);
+            put(buf, x0 + 5, yy + 1, u(side_w), &side, t.dim.patch(t.panel));
+            truncate(&pv, text_room)
+        } else {
+            String::new()
+        };
+        put(buf, x0 + 5 + u(side_w), yy + 1, u(room.saturating_sub(side_w)), &shown, ps);
         if !badge.is_empty() {
             rput(buf, r.right() - 1, yy + 1, &badge, t.btn_primary);
         }
@@ -116,6 +126,15 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         x = put(buf, x, hy, 3, "^k", t.secondary.add_modifier(Modifier::BOLD)) + 1;
         put(buf, x, hy, 8, "go to", t.dim);
     }
+}
+
+/// Where a bot runs: `[cloud]` for one on a gateway on another computer, `[local]` for one here. A group runs
+/// nowhere itself, so it has neither.
+pub(super) fn side_badge(b: &Bot) -> String {
+    if b.group {
+        return String::new();
+    }
+    tr(if b.is_cloud() { "[cloud]" } else { "[local]" }).into_owned() + " "
 }
 
 /// A one-line preview without Markdown punctuation: its first line (also how a reply's quote shows).

@@ -113,7 +113,14 @@ fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
     }
     out.lines.push(Line::from(vec![Span::raw("  "), Span::styled(b.name.clone(), t.bold)]));
     let (meta, hello) = if b.group {
-        let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
+        let names: Vec<String> = b
+            .members
+            .iter()
+            .map(|m| match app.bots.get(m).filter(|b| b.is_cloud()) {
+                Some(_) => format!("{} ☁", app.author_name(Some(m))),
+                None => app.author_name(Some(m)),
+            })
+            .collect();
         (
             format!("group · {}", names.join(", ")),
             "Everyone answers in turn unless you @mention someone. Each bot works in its own folder with its own tools."
@@ -121,7 +128,7 @@ fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
         )
     } else {
         (
-            format!("{} · {}", b.backend, b.folder(&app.home)),
+            format!("{} · {}", if b.is_cloud() { "hermes" } else { b.backend.as_str() }, b.folder(&app.home)),
             format!("Say what you need. {} works in the background and pings you when it's done or needs you.", b.name),
         )
     };
@@ -186,10 +193,13 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Some(a) => (a.name.clone(), a.color.as_str()),
                 None => ("A deleted bot".to_owned(), "gray"),
             };
-            out.lines.push(Line::from(vec![
-                Span::styled(format!(" {name}"), name_style(color)),
-                Span::styled(format!(" {}", clock(e.created_at)), t.dim),
-            ]));
+            let mut head = vec![Span::styled(format!(" {name}"), name_style(color))];
+            // A room shows which side answered: the gateway, not this computer.
+            if author.is_some_and(Bot::is_cloud) {
+                head.push(Span::styled(" ☁", t.dim));
+            }
+            head.push(Span::styled(format!(" {}", clock(e.created_at)), t.dim));
+            out.lines.push(Line::from(head));
             if let Some(title) = app.artifact_title(e) {
                 out.lines.push(Line::from(Span::styled(
                     format!(" ▤ Artifact: {}", truncate(&title, width.saturating_sub(10))),

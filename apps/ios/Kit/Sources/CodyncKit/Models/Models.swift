@@ -241,6 +241,37 @@ public struct Hello: Codable, Sendable {
     public var canUpdate: Bool?
     /// The latest release the computer found; nil while unknown (development builds, older hosts).
     public var latestVersion: String?
+    /// Hermes gateways on the user's other computers (nil from older hosts): names and addresses, never keys.
+    public var connections: [HermesConnection]?
+}
+
+/// What `testConnection` found: the profile it checked, its models and what the gateway can do.
+public struct ConnectionCheck: Decodable, Sendable {
+    public var profile: String
+    public var models: [String]
+}
+
+/// A Hermes gateway on another computer (`hermes::connections`): where the user's cloud bots run.
+public struct HermesConnection: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    /// `https://vps.example.com`, without a `/p/<profile>` suffix.
+    public var baseUrl: String
+    /// The profile the gateway's plain routes serve, usually `default`.
+    public var defaultProfile: String
+    /// How Codync reaches that computer's shell to make profiles (`user@host` or an SSH alias).
+    public var ssh: String?
+    /// The last time it answered, in ms.
+    public var verifiedAt: Int64?
+
+    public init(id: String, name: String, baseUrl: String, defaultProfile: String = "default", ssh: String? = nil, verifiedAt: Int64? = nil) {
+        self.id = id
+        self.name = name
+        self.baseUrl = baseUrl
+        self.defaultProfile = defaultProfile
+        self.ssh = ssh
+        self.verifiedAt = verifiedAt
+    }
 }
 
 public struct DirListing: Codable, Sendable {
@@ -313,6 +344,10 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var sharedMemory: Bool?
     /// Only sent when the user changes it.
     public var harnessMemory: Bool?
+    /// A Hermes gateway this bot runs on; nil = an agent on this computer.
+    public var connection: String?
+    /// The profile it runs as there; nil = the host names one from its id.
+    public var hermesProfile: String?
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
@@ -350,6 +385,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
         manageTeam = bot.manageTeam
         offeredToNetwork = bot.offeredToNetwork
         reachableByAssistants = bot.reachableByAssistants
+        connection = bot.connection
+        hermesProfile = bot.hermesProfile
     }
 
     /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
@@ -365,6 +402,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
+        follow(\.connection); follow(\.hermesProfile)
         return draft
     }
 }

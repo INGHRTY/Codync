@@ -3,6 +3,7 @@ import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
 import { groupBotReactions, isGroup, isReplyable, isWorking, type Bot, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
+import { CloudBadge } from '../../components/CloudBadge'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Overlay'
@@ -85,6 +86,8 @@ export function AuthorLabel({ botId, name }: { botId?: string | null; name?: str
     <HStack gap={8}>
       {bot ? <BotAvatar bot={bot} size={26} animated={false} /> : null}
       <Text size="subheadline" weight="medium" tone="secondary" style={bot ? { color: avatarColor(bot.avatarColor) } : undefined}>{store.authorName(botId, name)}</Text>
+      {/* A room shows which side answered: the gateway, not this computer. */}
+      {bot?.connection ? <CloudBadge cloud size={12} /> : null}
     </HStack>
   )
 }

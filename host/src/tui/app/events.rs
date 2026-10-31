@@ -57,6 +57,9 @@ impl App {
             Some("hello") => {
                 self.snapshot_floors();
                 self.network = v["network"].clone();
+                if let Some(list) = v["connections"].as_array() {
+                    self.connections.clone_from(list);
+                }
                 if !v["usage"].is_null() {
                     self.usage = v["usage"].clone();
                 }
@@ -64,6 +67,10 @@ impl App {
             Some("usage") => self.usage = v["usage"].clone(),
             Some("screen") => self.screen = v["screen"].clone(),
             Some("network") => self.network_changed(&v["network"]),
+            Some("connections") => {
+                self.connections = v["connections"].as_array().cloned().unwrap_or_default();
+                crate::tui::manage::hermes::loaded(&mut self.overlays, &self.connections);
+            }
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
                 self.memory_moved(&v["bot"]);
@@ -225,6 +232,10 @@ impl App {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
                 self.screen = v["screen"].clone();
+                if let Some(list) = v["connections"].as_array() {
+                    self.connections.clone_from(list);
+                    crate::tui::manage::hermes::loaded(&mut self.overlays, &self.connections);
+                }
             }
             After::Analytics => self.analytics_set(&v),
             After::Backends => {

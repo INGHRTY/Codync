@@ -10,6 +10,7 @@ import {
   type Usage,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
+import type { Connection as Gateway } from '@shared/connections'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
@@ -46,6 +47,8 @@ export class BotMirror extends Observable {
   cloud: CloudStatus | null = null
   /** This computer's network; null until known, and on hosts without `networkView`. */
   network: NetworkView | null = null
+  /** The Hermes gateways on the user's other computers (the cloud bots' side); empty until known. */
+  connections: Gateway[] = []
   /** A new network's recovery code until the user says they saved it: the host keeps it nowhere. */
   recoveryCode: RecoveryCode | null = null
   historyComplete = new Set<string>()
@@ -219,6 +222,11 @@ export class BotMirror extends Observable {
 
   setNetwork(network: NetworkView | null) {
     this.network = network
+    this.changed()
+  }
+
+  setConnections(connections: Gateway[]) {
+    this.connections = connections
     this.changed()
   }
 

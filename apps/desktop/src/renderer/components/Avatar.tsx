@@ -5,6 +5,7 @@ import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '.
 import { Icon } from './Icon'
 import './avatar.css'
 import { LeadAgentBadge } from './LeadAgentBadge'
+import { CloudAvatarBadge } from './CloudBadge'
 
 export type Mood = 'idle' | 'working' | 'needsInput' | 'failed'
 
@@ -285,6 +286,7 @@ export function AvatarWithStatus({ bot, members = [], size = 44 }: { bot: Bot; m
     <div className={`avatar-frame ${bot.lead ? 'lead-avatar' : ''}`} style={{ width: size, height: size }}>
       {isGroup(bot) ? <GroupAvatar members={members} size={size} /> : <BotAvatar bot={bot} size={size} />}
       {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
+      {bot.connection ? <CloudAvatarBadge size={Math.max(12, size * 0.34)} /> : null}
       {needsInput(bot) ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>
           <Icon name="exclamationmark" size={size * 0.2} weight="black" scaled={false} />

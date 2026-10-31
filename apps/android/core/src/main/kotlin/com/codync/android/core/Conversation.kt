@@ -161,6 +161,8 @@ sealed interface MirrorEvent {
     data class Call(val cue: CallCue) : MirrorEvent
     /** The computer's network changed: live only, never a checkpoint. */
     data class Network(val view: NetworkView) : MirrorEvent
+    /** The Hermes gateways the user set up changed: live only, never a checkpoint. */
+    data class Connections(val list: List<HermesConnection>) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -179,6 +181,9 @@ sealed interface MirrorEvent {
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored
             // One this app can't read is passed over: the next stream's hello carries the view again.
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
+            "connections" -> runCatching {
+                Connections(WireJson.decodeFromJsonElement<List<HermesConnection>>(value["connections"] ?: JsonArray(emptyList())))
+            }.getOrDefault(Ignored)
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored

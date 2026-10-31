@@ -140,6 +140,13 @@ public struct GroupEditorView: View {
         HStack(spacing: 14) {
             CharacterAvatar(bot: bot, size: 32, animated: false)
             Text(bot.name).foregroundStyle(dimmed ? Palette.secondary : Palette.text).lineLimit(1)
+            // A room can hold this computer's bots and a gateway's together.
+            if bot.isCloud {
+                Image(systemName: "cloud")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.secondary)
+                    .accessibilityLabel(L10n.tr("Runs on a Hermes gateway"))
+            }
             Spacer(minLength: 0)
             trailing()
         }

@@ -24,6 +24,17 @@ textarea.field-box {
   font-weight: 400;
   font-family: var(--mono);
 }
+/* A gateway bot's profile name (empty: automatic) and a caption row inside the form. */
+.bot-profile {
+  width: 132px;
+  flex: none;
+  padding: 5px 8px;
+  font-family: var(--mono);
+  font-size: var(--text-caption);
+}
+.bot-form-note {
+  padding: 6px 2px;
+}
 
 .bot-form {
   height: 100%;

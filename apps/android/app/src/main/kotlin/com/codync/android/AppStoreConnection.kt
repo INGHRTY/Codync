@@ -194,6 +194,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             refresh()
             receiveArtifacts(batch)
             receiveNetwork(batch)
+            receiveConnections(batch)
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()

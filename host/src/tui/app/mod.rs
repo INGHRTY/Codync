@@ -63,6 +63,8 @@ pub struct App {
     pub screen: Value,
     /// This computer's network (`networkView`'s shape); null on hosts without one.
     pub network: Value,
+    /// The Hermes gateways on the user's other computers (names and addresses, never keys).
+    pub connections: Vec<Value>,
     pub backends: Vec<Value>,
     pub selected: Option<String>,
     pub focus: Focus,
@@ -153,6 +155,7 @@ impl App {
             usage: Value::Null,
             screen: Value::Null,
             network: Value::Null,
+            connections: vec![],
             backends: vec![],
             selected: None,
             focus: Focus::Roster,

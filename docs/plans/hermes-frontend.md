@@ -102,8 +102,9 @@ struct Connection {
 - `host/src/agent/bot/engine/mod.rs`: `enum Engine { Acp(Conn), Hermes(remote::Conn) }` with
   `ensure_session / prompt / cancel / respond_permission / stop / set_model`. `turn.rs`, `updates.rs`,
   `session.rs`, `lifecycle.rs` dispatch through it; the ACP branch keeps its code.
-- API: `listConnections`, `saveConnection`, `testConnection`, `deleteConnection` (loopback + phones);
-  `hello` gains `connections`.
+- API: `listConnections`, `saveConnection`, `testConnection`, `deleteConnection`. Saving, testing and deleting
+  are loopback only (a key is entered at the computer); `listConnections` also answers a phone, so it can show
+  where a bot runs. `hello` gains `connections` (names and addresses, never keys).
 - `Hub::create_bot` / `update_bot`: accept `connection`; a remote bot is `backend: hermes`, skips local
   install checks, and gets only its attachment/artifact folders.
 
@@ -157,7 +158,12 @@ card raised and answered (`selected: once`) with the run continuing, and a clean
   (`/v1/models`); `fastMode` hidden for remote.
 - Cloud / local badge on avatars and roster rows; the room shows which side answered.
 - Group member picker offers remote bots with the badge.
-- TUI: a connections page on the existing forms; `[cloud]` / `[local]` text badges.
+- TUI: a **Hermes connections** sheet (`H`, or the palette) — the list with each gateway's address, profile,
+  reach, and its bots with the profile each runs as; a gateway's form (name, address, profile, key, SSH host)
+  with `^t` test in three states, `^s` save, `x` remove. Bot settings gain **Runs on** (this computer, or a
+  gateway) and **Profile**; a cloud bot hides Agent, Fast mode, Fallbacks, Options and Workspace, and saves as
+  Hermes with no local workspace. `[cloud]` in roster previews and chat headers, `☁` beside authors in a room,
+  and the group picker marks a gateway's bots.
 
 ### Phase 5 — Appearance (Grok Bot)
 

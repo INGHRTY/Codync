@@ -29,6 +29,11 @@ import com.codync.android.design.*
             Symbol("exclamationmark", size = size * .24f, tint = Color.White)
         } else if (bot.unread > 0) Box(Modifier.size(size * .28f).align(if (bot.lead) Alignment.TopEnd else Alignment.BottomEnd).ring().background(Palette.accentFill, CircleShape))
         if (bot.lead) Box(Modifier.align(Alignment.BottomEnd)) { LeadAgentBadge(size * .34f) }
+        // A cloud bot runs on a gateway, not here: the marker sits opposite the lead star.
+        if (bot.isCloud) Box(Modifier.size(maxOf(12.dp, size * .34f)).align(Alignment.TopStart).ring()
+            .background(Palette.background, CircleShape), contentAlignment = Alignment.Center) {
+            Symbol("cloud", size = size * .22f, tint = Palette.text, contentDescription = tr("Runs on a Hermes gateway"))
+        }
     }
 }
 

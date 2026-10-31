@@ -78,8 +78,8 @@ const LOCAL_ONLY: &[&str] = &[
     "networkRecover",
     // Who may write to this computer's bots is decided at the computer, like who is in.
     "setNetworkRules",
-    // A gateway's key is entered at the computer, never from a phone.
-    "listConnections",
+    // A gateway's key is entered at the computer, never from a phone; a phone may read the list (names and
+    // addresses, no keys) so it can say where a bot runs and start one there.
     "saveConnection",
     "testConnection",
     "deleteConnection",

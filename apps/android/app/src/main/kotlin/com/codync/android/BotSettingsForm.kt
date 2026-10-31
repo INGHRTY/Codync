@@ -54,11 +54,15 @@ internal enum class FormPart { All, Often, Rarely }
                 }
                 CardSection("Profile") { nameRow(draft, change); instructionsRow(draft, change); createdByRow(state, bot) }
                 CardSection("Agent") {
-                    fallbackBanner(state, store, bot); computerRow(state, online)
-                    agentRows(state, store, draft, change, bot) { addingFallback = true }; placeRows(draft, change) { folders = true }
+                    fallbackBanner(state, store, bot); computerRow(state, draft, online)
+                    runLocationRows(state, draft, change)
+                    if (draft.isCloud) gatewayModelRow(state, store, draft, change)
+                    else agentRows(state, store, draft, change, bot) { addingFallback = true }
+                    placeRows(draft, change) { folders = true }
                 }
                 CardSection("Activity") {
-                    notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
+                    notifyRow(draft, change); if (!draft.isCloud) computerUseRow(state, draft, change)
+                    manageTeamRow(state, draft, change); reachRows(state, draft, change)
                 }
                 Plugins(state, draft, change) { viewingSkill = it }
                 draft.id?.let { MemoryCard(it, store) }
@@ -68,7 +72,9 @@ internal enum class FormPart { All, Often, Rarely }
                 CardSection("Instructions") { instructionsRow(draft, change) }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot)
-                    agentRows(state, store, draft, change, bot) { addingFallback = true }
+                    runLocationRows(state, draft, change)
+                    if (draft.isCloud) gatewayModelRow(state, store, draft, change)
+                    else agentRows(state, store, draft, change, bot) { addingFallback = true }
                     if (!online) row { OfflineNote() }
                 }
             }
@@ -78,8 +84,10 @@ internal enum class FormPart { All, Often, Rarely }
                     nameRow(draft, change); createdByRow(state, bot)
                 }
                 // The agent and its model are on the Details page; what's left is where it works.
-                CardSection("Workspace") { computerRow(state, online); placeRows(draft, change) { folders = true } }
-                CardSection("Activity") { notifyRow(draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change) }
+                CardSection("Workspace") { computerRow(state, draft, online); placeRows(draft, change) { folders = true } }
+                CardSection("Activity") {
+                    notifyRow(draft, change); if (!draft.isCloud) manageTeamRow(state, draft, change); reachRows(state, draft, change)
+                }
                 Plugins(state, draft, change) { viewingSkill = it }
             }
         }
@@ -94,6 +102,10 @@ internal enum class FormPart { All, Often, Rarely }
         AddFallbackSheet(state, store, draft.backend, draft.fallbacks.orEmpty()) { change(draft.copy(fallbacks = draft.fallbacks.orEmpty() + it)); addingFallback = false }
     }
 }
+
+/** The gateway's model row: the composable in its card row. */
+private fun CardRows.gatewayModelRow(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit) =
+    row { GatewayModelRow(state, store, draft, change) }
 
 @Composable private fun OfflineNote() = Text(tr("Reconnect to this computer to save settings."), style = Type.caption, color = Palette.warning)
 
@@ -118,9 +130,11 @@ private fun CardRows.fallbackBanner(state: AppState, store: AppStore, bot: Bot?)
     row { FallbackBanner(state, store, bot, step) }
 }
 
-private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
+private fun CardRows.computerRow(state: AppState, draft: BotDraft, online: Boolean) = row {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ValueRow("Computer", state.computers.firstOrNull()?.name ?: "Your computer")
+        // A gateway bot works on that computer, not this one.
+        ValueRow("Computer", if (draft.isCloud) state.connections.firstOrNull { it.id == draft.connection }?.name ?: tr("Gateway")
+            else state.computers.firstOrNull()?.name ?: "Your computer")
         if (!online) OfflineNote()
     }
 }
@@ -149,8 +163,15 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     }
 }
 
-/** Where the bot works and what it may do there without asking. */
+/** Where the bot works and what it may do there without asking. A gateway bot has no folder here. */
 private fun CardRows.placeRows(draft: BotDraft, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
+    if (draft.isCloud) {
+        row {
+            Text(tr("It works in the gateway's own Hermes profile: this computer's folders, apps, connectors and skills stay here."),
+                style = Type.caption, color = Palette.secondary)
+        }
+        return
+    }
     row {
         ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
             else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
@@ -217,6 +238,8 @@ private fun CardRows.reachRows(state: AppState, draft: BotDraft, change: (BotDra
 }
 
 @Composable private fun Plugins(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit, viewSkill: (SkillRef) -> Unit) {
+    // Connectors and skills are this computer's (MCP servers on loopback, files here): a gateway bot has none.
+    if (draft.isCloud) return
     val plugins = state.plugins
     PluginToggles("Connectors", "No connectors yet. Add GitHub, Linear, Notion and more from Extensions.",
         plugins?.connectors.orEmpty().map { Triple(it.id, it.name, it.command ?: it.url.orEmpty()) },

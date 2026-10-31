@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 69] = [
+const HELP: [(&str, &str, &str); 70] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -73,6 +73,7 @@ const HELP: [(&str, &str, &str); 69] = [
     ("VIEW", "U", "usage"),
     ("VIEW", "P", "pair a phone"),
     ("VIEW", "N", "network: your other computers"),
+    ("VIEW", "H", "Hermes connections: your VPS gateways"),
     ("VIEW", "^k share", "share usage analytics on / off"),
     ("VIEW", "^k about", "what usage analytics include"),
     ("VIEW", "language", "app language: follow system or choose one of eight languages"),

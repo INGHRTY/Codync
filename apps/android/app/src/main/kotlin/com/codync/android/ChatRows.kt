@@ -159,6 +159,8 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp)
         Text(state.authorName(botId, name), style = Type.subheadline.medium, color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.secondary)
+        // A room shows which side answered: the gateway, not this computer.
+        if (bot?.isCloud == true) Symbol("cloud", size = 12.dp, tint = Palette.secondary, contentDescription = tr("Runs on a Hermes gateway"))
     }
 }
 

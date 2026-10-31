@@ -157,6 +157,7 @@ private struct ComputerRows: View {
     @State private var coloring = false
     @State private var voiceSettings = false
     @State private var networkSheet = false
+    @State private var hermesSheet = false
 
     var body: some View {
         summary
@@ -171,6 +172,11 @@ private struct ComputerRows: View {
             }
             if showsNetwork {
                 Button { networkSheet = true } label: { RowLabel("Network", systemImage: Self.networkIcon, chevron: true) }
+                    .buttonStyle(.plain)
+            }
+            // Only from a host that has them (its hello says).
+            if store.hello?.connections != nil {
+                Button { hermesSheet = true } label: { RowLabel("Hermes connections", systemImage: "cloud", chevron: true) }
                     .buttonStyle(.plain)
             }
         }
@@ -222,6 +228,9 @@ private struct ComputerRows: View {
             if store.connection == .online, showsNetwork {
                 items.append(MenuItem("Network", icon: Self.networkIcon) { networkSheet = true })
             }
+            if store.connection == .online, store.hello?.connections != nil {
+                items.append(MenuItem("Hermes connections", icon: "cloud") { hermesSheet = true })
+            }
             if let revoke {
                 items.append(MenuItem("Revoke this iPhone's access", icon: "lock.slash", destructive: true, divider: true, action: revoke))
             }
@@ -232,6 +241,7 @@ private struct ComputerRows: View {
         }
         .codyncSheet(isPresented: $voiceSettings) { VoiceChatSettingsView().environment(store) }
         .codyncSheet(isPresented: $networkSheet) { NetworkSheet().environment(store) }
+        .codyncSheet(isPresented: $hermesSheet) { HermesConnectionsSheet().environment(store) }
         .codyncOverlay(isPresented: $coloring) { close in
             ZStack {
                 Color.black.opacity(0.35).ignoresSafeArea().onTapGesture(perform: close)

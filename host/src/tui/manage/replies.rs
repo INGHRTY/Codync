@@ -15,6 +15,9 @@ impl App {
             }
         };
         match r {
+            Reply::Connections | Reply::GatewaySaved | Reply::GatewayTested | Reply::GatewayRemoved => {
+                self.hermes_reply(&r, Ok(v));
+            }
             Reply::Memory(bot) => {
                 for o in &mut self.overlays {
                     if let Overlay::Memory(m) = o
@@ -215,6 +218,10 @@ impl App {
     }
 
     fn sheet_error(&mut self, r: &Reply, e: String) {
+        if matches!(r, Reply::Connections | Reply::GatewaySaved | Reply::GatewayTested | Reply::GatewayRemoved) {
+            self.hermes_reply(r, Err(e));
+            return;
+        }
         match r {
             Reply::Models(backend) => {
                 self.models.insert(backend.clone(), Some(vec![]));
