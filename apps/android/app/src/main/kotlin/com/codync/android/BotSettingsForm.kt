@@ -54,10 +54,16 @@ internal enum class FormPart { All, Often, Rarely }
                 }
                 CardSection("Profile") { nameRow(draft, change); instructionsRow(draft, change); createdByRow(state, bot) }
                 CardSection("Agent") {
-                    fallbackBanner(state, store, bot); computerRow(state, online)
-                    agentRows(state, store, draft, change, bot) { addingFallback = true }; placeRows(draft, change) { folders = true }
+                    fallbackBanner(state, store, bot); computerRow(state, draft, online)
+                    runLocationRows(state, draft, change)
+                    if (draft.isCloud) gatewayModelRow(state, store, draft, change)
+                    else agentRows(state, store, draft, change, bot) { addingFallback = true }
+                    placeRows(draft, change) { folders = true }
                 }
-                CardSection("Activity") { notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change) }
+                CardSection("Activity") {
+                    notifyRow(draft, change); if (!draft.isCloud) computerUseRow(state, draft, change)
+                    manageTeamRow(state, draft, change); reachRows(state, draft, change)
+                }
                 Plugins(state, draft, change) { viewingSkill = it }
                 draft.id?.let { MemoryCard(it, store) }
                 state.error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
@@ -66,7 +72,9 @@ internal enum class FormPart { All, Often, Rarely }
                 CardSection("Instructions") { instructionsRow(draft, change) }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot)
-                    agentRows(state, store, draft, change, bot) { addingFallback = true }
+                    runLocationRows(state, draft, change)
+                    if (draft.isCloud) gatewayModelRow(state, store, draft, change)
+                    else agentRows(state, store, draft, change, bot) { addingFallback = true }
                     if (!online) row { OfflineNote() }
                 }
             }
@@ -76,8 +84,10 @@ internal enum class FormPart { All, Often, Rarely }
                     nameRow(draft, change); createdByRow(state, bot)
                 }
                 // The agent and its model are on the Details page; what's left is where it works.
-                CardSection("Workspace") { computerRow(state, online); placeRows(draft, change) { folders = true } }
-                CardSection("Activity") { notifyRow(draft, change); manageTeamRow(state, draft, change) }
+                CardSection("Workspace") { computerRow(state, draft, online); placeRows(draft, change) { folders = true } }
+                CardSection("Activity") {
+                    notifyRow(draft, change); if (!draft.isCloud) manageTeamRow(state, draft, change); reachRows(state, draft, change)
+                }
                 Plugins(state, draft, change) { viewingSkill = it }
             }
         }
@@ -92,6 +102,10 @@ internal enum class FormPart { All, Often, Rarely }
         AddFallbackSheet(state, store, draft.backend, draft.fallbacks.orEmpty()) { change(draft.copy(fallbacks = draft.fallbacks.orEmpty() + it)); addingFallback = false }
     }
 }
+
+/** The gateway's model row: the composable in its card row. */
+private fun CardRows.gatewayModelRow(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit) =
+    row { GatewayModelRow(state, store, draft, change) }
 
 @Composable private fun OfflineNote() = Text(tr("Reconnect to this computer to save settings."), style = Type.caption, color = Palette.warning)
 
@@ -116,9 +130,11 @@ private fun CardRows.fallbackBanner(state: AppState, store: AppStore, bot: Bot?)
     row { FallbackBanner(state, store, bot, step) }
 }
 
-private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
+private fun CardRows.computerRow(state: AppState, draft: BotDraft, online: Boolean) = row {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ValueRow("Computer", state.computers.firstOrNull()?.name ?: "Your computer")
+        // A gateway bot works on that computer, not this one.
+        ValueRow("Computer", if (draft.isCloud) state.connections.firstOrNull { it.id == draft.connection }?.name ?: tr("Gateway")
+            else state.computers.firstOrNull()?.name ?: "Your computer")
         if (!online) OfflineNote()
     }
 }
@@ -126,22 +142,17 @@ private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
 /** The agent, its model and the fallbacks that carry on for it. */
 private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, bot: Bot?, addFallback: () -> Unit) {
     row {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            val rest = bot?.restOf(draft.backend)
-            ValueRow("Agent", detail = rest?.line(RelativeTime.clock(rest.until))) {
-                ChoicePicker(draft.backend, agentChoices(state) + ("custom" to "Custom command"),
-                    { if (it != draft.backend) change(draft.withAgent(it)) }, label = "Agent")
-            }
-            backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
-                Text(it, style = Type.caption, color = Palette.warning)
-            }
-            if (draft.backend == "custom") FieldBox(draft.command.orEmpty(), { change(draft.copy(command = it.ifEmpty { null })) },
-                "ACP command, e.g. my-agent --acp", style = Type.callout.monospaced, capitalize = false)
-        }
-    }
-    row {
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
-            { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) })
+            { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
+            agents = agentChoices(state) + ("custom" to "Custom command"),
+            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }) {
+                bot?.restOf(draft.backend)?.let { Text(it.line(RelativeTime.clock(it.until)), style = Type.caption, color = Palette.secondary) }
+                backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
+                    Text(it, style = Type.caption, color = Palette.warning)
+                }
+                if (draft.backend == "custom") FieldBox(draft.command.orEmpty(), { change(draft.copy(command = it.ifEmpty { null })) },
+                    "ACP command, e.g. my-agent --acp", style = Type.callout.monospaced, capitalize = false)
+            }
     }
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
@@ -152,8 +163,15 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     }
 }
 
-/** Where the bot works and what it may do there without asking. */
+/** Where the bot works and what it may do there without asking. A gateway bot has no folder here. */
 private fun CardRows.placeRows(draft: BotDraft, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
+    if (draft.isCloud) {
+        row {
+            Text(tr("It works in the gateway's own Hermes profile: this computer's folders, apps, connectors and skills stay here."),
+                style = Type.caption, color = Palette.secondary)
+        }
+        return
+    }
     row {
         ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
             else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
@@ -205,7 +223,23 @@ private fun CardRows.manageTeamRow(state: AppState, draft: BotDraft, change: (Bo
     }
 }
 
+// Who else reaches this bot: shown only where it applies (in a network, cloud assistants on) and the host has the switch.
+private fun CardRows.reachRows(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit) {
+    val network = state.network ?: return
+    draft.offeredToNetwork?.takeIf { network.joined }?.let { on ->
+        row { SwitchRow("Offered to the network", "Bots on your other computers can see and message this bot.", on, { change(draft.copy(offeredToNetwork = it)) }) }
+    }
+    draft.reachableByAssistants?.takeIf { network.assistants }?.let { on ->
+        row {
+            SwitchRow("Reachable by cloud assistants", "ChatGPT or Claude in your Codync account can see and message this bot.", on,
+                { change(draft.copy(reachableByAssistants = it)) })
+        }
+    }
+}
+
 @Composable private fun Plugins(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit, viewSkill: (SkillRef) -> Unit) {
+    // Connectors and skills are this computer's (MCP servers on loopback, files here): a gateway bot has none.
+    if (draft.isCloud) return
     val plugins = state.plugins
     PluginToggles("Connectors", "No connectors yet. Add GitHub, Linear, Notion and more from Extensions.",
         plugins?.connectors.orEmpty().map { Triple(it.id, it.name, it.command ?: it.url.orEmpty()) },

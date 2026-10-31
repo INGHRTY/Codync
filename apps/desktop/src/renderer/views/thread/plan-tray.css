@@ -1,0 +1,68 @@
+/* The running turn's plan, floating above the composer (PlanTray.tsx). */
+.plan-tray {
+  /* The corner rule: never narrower than the column, never wider than the reading width. */
+  width: min(var(--column), calc(100% - 32px));
+  margin: 0 auto 6px;
+  padding: 6px 6px 6px 10px;
+  border-radius: var(--radius-l);
+  background: var(--panel);
+  box-shadow: var(--shadow-m);
+  animation: plan-tray-in 0.2s var(--ease-out) both;
+}
+@keyframes plan-tray-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-tray {
+    animation: none;
+  }
+}
+.plan-tray-head {
+  min-height: 22px;
+}
+.plan-tray-open {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
+  color: var(--text);
+}
+.plan-tray-open:hover {
+  background: var(--group);
+}
+.plan-tray-action {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  color: var(--secondary);
+  flex: none;
+}
+.plan-tray-action:hover {
+  background: var(--group);
+  color: var(--text);
+}
+.plan-tray-steps {
+  padding: 4px 4px 2px 5px;
+  /* A long plan scrolls rather than covering the chat. */
+  max-height: 168px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.plan-tray-steps::-webkit-scrollbar {
+  display: none;
+}
+.plan-tray-icon {
+  display: inline-flex;
+  margin-top: 2px;
+  flex: none;
+}
+.plan-tray-done {
+  text-decoration: line-through;
+}

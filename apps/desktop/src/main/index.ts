@@ -74,7 +74,8 @@ function openChat() {
   chat = new BrowserWindow({
     width: 1100,
     height: 760,
-    minWidth: 760,
+    // Narrow enough for the chat alone beside a narrow sidebar: the rail plus a 424px conversation.
+    minWidth: 424,
     minHeight: 500,
     title: app.getName(),
     show: false,
@@ -156,6 +157,13 @@ function registerIPC(tray: Tray) {
   ipcMain.on('app:version', (e) => (e.returnValue = app.getVersion()))
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))
   ipcMain.on('app:openedAtLogin', (e) => (e.returnValue = openedAtLogin()))
+  // `reset` is answered once per start, so a reload or another window doesn't bring the welcome flow back mid-session.
+  let onboardingReset = false
+  ipcMain.on('app:devOnboarding', (e) => {
+    const mode = process.env.CODYNC_DEV_ONBOARDING
+    const dev = !app.isPackaged && identity.environment === 'dev'
+    e.returnValue = dev && mode === 'skip' ? 'skip' : dev && mode === 'reset' && !onboardingReset ? ((onboardingReset = true), 'reset') : null
+  })
   ipcMain.on('app:debugOpen', (e) => (e.returnValue = app.isPackaged ? null : (process.env.CODYNC_DEBUG_OPEN ?? null)))
   ipcMain.handle('host:snapshot', () => snapshot())
   ipcMain.on('host:install', () => void host.install())
@@ -229,6 +237,7 @@ if (yieldsToInstall()) {
     const island = new Island({ url: rendererURL('island'), preload: join(__dirname, '../preload/index.js'), send, openApp: openChat, changed: () => tray.hostChanged() })
     const tray = new Tray({ openChat, openPairing, send, host, updates, island })
     updates.on('change', () => tray.hostChanged())
+    updates.on('upToDate', () => send({ kind: 'upToDate' }))
     registerIPC(tray)
     island.register()
     // Voice input goes to the island while it's on, else to the chat window's composer.

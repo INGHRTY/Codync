@@ -55,7 +55,8 @@ export interface TraySummary {
     subtitle: string
     error: string | null
   } | null
-  version: string | null
+  /** This computer's networks (codync-network), lines already translated; null on hosts without them. */
+  networks: { title: string; computers: { label: string; dot: TrayImage | null }[] }[] | null
   needsAttention: boolean
   textSize: number
   usageIconStyle: 'character' | 'original'
@@ -69,11 +70,13 @@ export type WindowCommand =
   | { kind: 'stopBot'; ref: string }
   | { kind: 'reviewApprovals' }
   | { kind: 'confirmReset' }
+  | { kind: 'upToDate' }
   | { kind: 'setTextSize'; size: number }
   | { kind: 'stepTextSize'; up: boolean | null }
   | { kind: 'setUsageIconStyle'; style: 'character' | 'original' }
   | { kind: 'setRemoteScreen'; on: boolean }
   | { kind: 'computerAccess' }
+  | { kind: 'networkSettings' }
   | { kind: 'newBot' }
   | { kind: 'search' }
   | { kind: 'toggleSidebar' }

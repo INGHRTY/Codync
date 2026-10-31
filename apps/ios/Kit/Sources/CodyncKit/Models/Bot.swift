@@ -47,12 +47,20 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var computer: Bool
     /// The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools). Nil from an older host.
     public var manageTeam: Bool?
+    /// Other computers in the user's networks list this bot and may message it. Nil from an older host.
+    public var offeredToNetwork: Bool?
+    /// The user's cloud assistant lists this bot and may message it. Nil from an older host.
+    public var reachableByAssistants: Bool?
     /// The bot that created this one; nil when the user did.
     public var createdBy: String?
     /// Uses the memory all the user's bots share ("About you"). Nil from an older host.
     public var sharedMemory: Bool?
     /// Keeps the harness's own memory (Claude Code's…) on beside Codync's. Nil where it has no switch.
     public var harnessMemory: Bool?
+    /// A Hermes gateway on another computer this bot runs on; nil = an agent on this computer.
+    public var connection: String?
+    /// The Hermes profile it runs as, on either side; nil = the host names one from its id.
+    public var hermesProfile: String?
     /// The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI):
     /// every bot on it shares it. Nil from an older host.
     public var harnessMemoryShared: Bool?
@@ -88,6 +96,15 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// Its band in the list: the lead, then pinned bots, then the rest. Dragging stays inside a band.
     public var band: Int { lead ? 0 : pinned ? 1 : 2 }
     public var folderName: String { managedWorkspace ? "Personal workspace" : (cwd as NSString).lastPathComponent }
+    /// Runs on a Hermes gateway on another computer rather than here.
+    public var isCloud: Bool { connection != nil }
+}
+
+/// The Hermes profile a bot runs as: its own name, or the one the host names from its id (`hermes::profile_of`).
+public func hermesProfileOf(id: String, named: String?) -> String {
+    if let named = named?.trimmingCharacters(in: .whitespaces), !named.isEmpty { return named.lowercased() }
+    let hex = id.filter { $0.isHexDigit }.prefix(12)
+    return "codync-\(hex)"
 }
 
 extension Bot {
@@ -123,9 +140,13 @@ extension Bot {
         skills = try c.decodeIfPresent([String].self, forKey: .skills) ?? []
         computer = try c.decodeIfPresent(Bool.self, forKey: .computer) ?? false
         manageTeam = try c.decodeIfPresent(Bool.self, forKey: .manageTeam)
+        offeredToNetwork = try c.decodeIfPresent(Bool.self, forKey: .offeredToNetwork)
+        reachableByAssistants = try c.decodeIfPresent(Bool.self, forKey: .reachableByAssistants)
         createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy)
         sharedMemory = try c.decodeIfPresent(Bool.self, forKey: .sharedMemory)
         harnessMemory = try c.decodeIfPresent(Bool.self, forKey: .harnessMemory)
+        connection = try c.decodeIfPresent(String.self, forKey: .connection)
+        hermesProfile = try c.decodeIfPresent(String.self, forKey: .hermesProfile)
         harnessMemoryShared = try c.decodeIfPresent(Bool.self, forKey: .harnessMemoryShared)
         memoryRev = try c.decodeIfPresent(Int64.self, forKey: .memoryRev)
         autoName = try c.decodeIfPresent(Bool.self, forKey: .autoName) ?? false

@@ -164,10 +164,10 @@ import com.kyant.shapes.RoundedRectangle
 /** Picks one of a few values side by side: the replacement for `.segmented`. */
 @Composable fun <T> SegmentedChoice(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxWidth().clip(Capsule()).background(Palette.bubbleUser).padding(3.dp)) {
-        val index = options.indexOfFirst { it.first == selection }.coerceAtLeast(0)
+        val index = options.indexOfFirst { it.first == selection }
         val segment = (maxWidth - 2.dp * (options.size - 1)) / options.size
         val thumb by animateDpAsState((segment + 2.dp) * index, Motion.morph(), label = "Thumb")
-        Box(Modifier.offset(x = thumb).width(segment).height(36.dp).clip(Capsule()).background(Palette.background))
+        if (index >= 0) Box(Modifier.offset(x = thumb).width(segment).height(36.dp).clip(Capsule()).background(Palette.background))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             for ((id, label) in options) {
                 val on = id == selection

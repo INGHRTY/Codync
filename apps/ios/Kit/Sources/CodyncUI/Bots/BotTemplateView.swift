@@ -15,6 +15,9 @@ struct BotTemplateView: View {
         template.hidden = nil
         template.fallbacks = nil
         template.selfFallbacks = nil
+        // Who reaches a bot belongs to its computer, not its setup.
+        template.offeredToNetwork = nil
+        template.reachableByAssistants = nil
         self.template = template
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

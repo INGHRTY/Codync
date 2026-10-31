@@ -48,6 +48,9 @@ pub struct Bot {
     pub computer: bool,
     /// It creates bots and changes any bot's setup (`chat::manage`); `None` from a host without it.
     pub manage_team: Option<bool>,
+    /// `None`: the host has no per-bot network switches.
+    pub offered_to_network: Option<bool>,
+    pub reachable_by_assistants: Option<bool>,
     /// The bot that created this one; `None` when the user did.
     pub created_by: Option<String>,
     pub created_at: i64,
@@ -74,6 +77,10 @@ pub struct Bot {
     pub members: Vec<String>,
     /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
+    /// The Hermes gateway on another computer this bot runs on (`remote::hermes::connections`); `None`: here.
+    pub connection: Option<String>,
+    /// The Hermes profile it runs as on either side; `None`: the host names one from its id.
+    pub hermes_profile: Option<String>,
 }
 
 /// An agent of a bot's chain that rests (`agent::fallback::resting`) until `until` (epoch ms).
@@ -93,6 +100,7 @@ pub struct AgentModel {
     pub id: String,
     pub name: String,
     pub options: Vec<ModelOption>,
+    pub options_error: Option<String>,
 }
 
 /// A model setting (effort, fast…) and its values as `(id, name)`.
@@ -100,6 +108,7 @@ pub struct ModelOption {
     pub id: String,
     pub name: String,
     pub values: Vec<(String, String)>,
+    pub default: Option<String>,
 }
 
 impl AgentModel {
@@ -112,9 +121,14 @@ impl AgentModel {
         let options = v["options"].as_array().into_iter().flatten().filter_map(|o| {
             let (name, id) = pair(o)?;
             let values = o["values"].as_array()?.iter().filter_map(|v| pair(v).map(|(n, i)| (i, n))).collect();
-            Some(ModelOption { id, name, values })
+            Some(ModelOption { id, name, values, default: o["default"].as_str().map(str::to_owned) })
         });
-        Some(Self { id, name, options: options.collect() })
+        Some(Self {
+            id,
+            name,
+            options: options.collect(),
+            options_error: v["optionsError"].as_str().map(str::to_owned),
+        })
     }
 }
 
@@ -144,9 +158,20 @@ impl Bot {
         }
     }
 
+    /// A bot on a gateway runs on that computer, not this one.
+    pub fn is_cloud(&self) -> bool {
+        self.connection.is_some()
+    }
+
     /// Where it works, as the header shows it.
     pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
+        if self.is_cloud() {
+            "Hermes gateway".to_owned()
+        } else if self.managed_workspace {
+            "personal workspace".to_owned()
+        } else {
+            tilde(&self.cwd, home)
+        }
     }
 
     pub(super) fn parse(v: &Value) -> Option<Self> {
@@ -178,6 +203,8 @@ impl Bot {
             notify: v["notify"].as_bool().unwrap_or(true),
             computer: v["computer"].as_bool().unwrap_or(false),
             manage_team: v["manageTeam"].as_bool(),
+            offered_to_network: v["offeredToNetwork"].as_bool(),
+            reachable_by_assistants: v["reachableByAssistants"].as_bool(),
             created_by: v["createdBy"].as_str().map(str::to_owned),
             created_at: v["createdAt"].as_i64().unwrap_or(0),
             harness_memory: v["harnessMemory"]
@@ -204,6 +231,8 @@ impl Bot {
             group: v["kind"] == "group",
             members: strs(&v["members"]),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
+            connection: v["connection"].as_str().filter(|c| !c.is_empty()).map(str::to_owned),
+            hermes_profile: v["hermesProfile"].as_str().filter(|p| !p.is_empty()).map(str::to_owned),
         })
     }
 

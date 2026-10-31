@@ -305,10 +305,23 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(700)).await;
         assert!(!call.is_finished());
         let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-        let (mut socket, _) = listener.accept().await.unwrap();
-        let _ = socket.read(&mut [0; 4096]).await.unwrap();
-        socket.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await.unwrap();
-        assert_eq!(call.await.unwrap(), Ok(serde_json::json!({})));
+        // Every attempt that reaches the port is answered, however many the retries make: the one
+        // the call is waiting on must not be left behind an attempt it has already given up on.
+        let answering = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    let _ = socket.read(&mut [0; 4096]).await;
+                    let _ = socket.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await;
+                });
+            }
+        });
+        let answered = tokio::time::timeout(std::time::Duration::from_secs(10), call)
+            .await
+            .expect("the call kept waiting for the host to come back")
+            .unwrap();
+        answering.abort();
+        assert_eq!(answered, Ok(serde_json::json!({})));
     }
 
     #[test]

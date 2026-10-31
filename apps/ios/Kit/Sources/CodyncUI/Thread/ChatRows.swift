@@ -82,15 +82,24 @@ struct TimeSeparator: View {
 /// Who wrote a message in a group: their avatar and name in their color.
 struct AuthorLabel: View {
     let botId: String?
+    /// The name for an author that isn't one of this computer's bots (a bot on another computer).
+    var name: String?
     @Environment(BotStore.self) private var model
 
     var body: some View {
         let bot = botId.flatMap { model.bots[$0] }
         HStack(spacing: 8) {
             if let bot { CharacterAvatar(bot: bot, size: 26, animated: false) }
-            Text(model.authorName(botId))
+            Text(model.authorName(botId, fallback: name))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(bot.map { AvatarPalette.color($0.avatarColor) } ?? Palette.secondary)
+            // A room shows which side answered: the gateway, not this computer.
+            if let bot, bot.isCloud {
+                Image(systemName: "cloud")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.secondary)
+                    .accessibilityLabel(L10n.tr("Runs on a Hermes gateway"))
+            }
         }
     }
 }
@@ -98,6 +107,8 @@ struct AuthorLabel: View {
 /// The message a reply quotes, as its first line without Markdown markers.
 struct QuoteLine: View {
     let text: String
+    /// Drawn on the user's solid bubble, where the page's secondary grey is too dark to read.
+    var onSolid = false
 
     var body: some View {
         Label {
@@ -106,7 +117,7 @@ struct QuoteLine: View {
             Image(systemName: "text.bubble")
         }
         .font(.subheadline)
-        .foregroundStyle(Palette.secondary)
+        .foregroundStyle(onSolid ? Palette.secondaryOnChatUser : Palette.secondary)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Replying to \(text)")
     }
@@ -132,17 +143,17 @@ struct UserBubble: View {
 
     private var text: some View {
             VStack(alignment: .leading, spacing: 4) {
-                if let quote = entry.data.replyTo { QuoteLine(text: quote.text) }
+                if let quote = entry.data.replyTo { QuoteLine(text: quote.text, onSolid: true) }
                 if let text = entry.data.text, !text.isEmpty {
                     Text(text)
                         .font(.body)
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(Palette.onChatUser)
                         .textSelection(.enabled)
                 }
             }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(Palette.chatUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .contextActions(reactions: model.reactionPick(entry)) {
                     var items = [MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) }]
                     if let reply { items.append(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply)) }

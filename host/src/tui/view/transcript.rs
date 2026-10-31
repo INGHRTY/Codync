@@ -79,7 +79,7 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
             Item::Group(g) => {
                 let from = out.lines.len();
                 let lead = format!("{} messages with ", g.count);
-                bot_message_line(&mut out, app, g.first, &g.peer, &lead, g.failed, from);
+                bot_message_line(&mut out, app, g.first, (&g.peer, g.peer_name.as_deref()), &lead, g.failed, from);
             }
         }
     }
@@ -113,7 +113,14 @@ fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
     }
     out.lines.push(Line::from(vec![Span::raw("  "), Span::styled(b.name.clone(), t.bold)]));
     let (meta, hello) = if b.group {
-        let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
+        let names: Vec<String> = b
+            .members
+            .iter()
+            .map(|m| match app.bots.get(m).filter(|b| b.is_cloud()) {
+                Some(_) => format!("{} ☁", app.author_name(Some(m))),
+                None => app.author_name(Some(m)),
+            })
+            .collect();
         (
             format!("group · {}", names.join(", ")),
             "Everyone answers in turn unless you @mention someone. Each bot works in its own folder with its own tools."
@@ -121,7 +128,7 @@ fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
         )
     } else {
         (
-            format!("{} · {}", b.backend, b.folder(&app.home)),
+            format!("{} · {}", if b.is_cloud() { "hermes" } else { b.backend.as_str() }, b.folder(&app.home)),
             format!("Say what you need. {} works in the background and pings you when it's done or needs you.", b.name),
         )
     };
@@ -186,10 +193,13 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Some(a) => (a.name.clone(), a.color.as_str()),
                 None => ("A deleted bot".to_owned(), "gray"),
             };
-            out.lines.push(Line::from(vec![
-                Span::styled(format!(" {name}"), name_style(color)),
-                Span::styled(format!(" {}", clock(e.created_at)), t.dim),
-            ]));
+            let mut head = vec![Span::styled(format!(" {name}"), name_style(color))];
+            // A room shows which side answered: the gateway, not this computer.
+            if author.is_some_and(Bot::is_cloud) {
+                head.push(Span::styled(" ☁", t.dim));
+            }
+            head.push(Span::styled(format!(" {}", clock(e.created_at)), t.dim));
+            out.lines.push(Line::from(head));
             if let Some(title) = app.artifact_title(e) {
                 out.lines.push(Line::from(Span::styled(
                     format!(" ▤ Artifact: {}", truncate(&title, width.saturating_sub(10))),
@@ -250,7 +260,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
             if let Some(x) = Exchange::of(&b.id, e) {
                 let lead = format!("{} ", x.verb());
                 let failed = matches!(x.outcome, Outcome::Failed(_));
-                bot_message_line(out, app, e, x.peer(), &lead, failed, from);
+                bot_message_line(out, app, e, (x.peer(), x.peer_name.as_deref()), &lead, failed, from);
                 return;
             }
             let text = if let Some(status) = e.data["connectionRequest"]["status"].as_str() {
@@ -355,11 +365,21 @@ pub(in crate::tui) fn unfoldable(e: &Entry) -> Option<&str> {
 
 /// A bot-to-bot exchange, or a run of them, as one compact line ("· Messaged ▌O▐ Owen",
 /// "· 3 messages with ▌O▐ Owen"); click opens the conversation with `peer`.
-/// Only a failure is marked: its text lives in the conversation sheet.
-fn bot_message_line(out: &mut Built, app: &App, e: &Entry, peer: &str, lead: &str, failed: bool, from: usize) {
+/// Only a failure is marked: its text lives in the conversation sheet. A peer on another
+/// computer goes by the name its exchanges carry.
+fn bot_message_line(
+    out: &mut Built,
+    app: &App,
+    e: &Entry,
+    (peer, remote): (&str, Option<&str>),
+    lead: &str,
+    failed: bool,
+    from: usize,
+) {
     let t = theme();
     gap(out);
-    let (name, color) = app.bots.get(peer).map_or(("A deleted bot", "gray"), |p| (p.name.as_str(), p.color.as_str()));
+    let (name, color) =
+        app.bots.get(peer).map_or((remote.unwrap_or("A deleted bot"), "gray"), |p| (p.name.as_str(), p.color.as_str()));
     let mark = if failed { Span::styled(" × ", t.red) } else { Span::styled(" · ", t.dim) };
     let mut line = vec![
         Span::styled(lead.to_owned(), t.secondary),

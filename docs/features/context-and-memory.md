@@ -28,7 +28,7 @@ its own context and compacts it itself.
     `_meta.systemPrompt.append` on `session/new` and `session/load`. It survives compaction.
   - **An agent advertising ACP `sessionCapabilities.systemPrompt`** receives it as `systemPrompt`
     (`append`) on `session/new`, `session/load` and `session/fork`, and keeps it across compaction.
-  - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`),
+  - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`; repeated with each message until one carrying it succeeds, the snapshot's `unprompted`, kept across a host restart),
     and once more, marked as replacing the earlier one, on the first message after a compaction.
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
@@ -118,7 +118,7 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   added and took out, the notes it wrote).
 - **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`): Claude Code
   (`autoMemoryEnabled` and `autoDreamEnabled` false, `CLAUDE_CODE_DISABLE_AUTO_MEMORY`), Copilot (its memory tools
-  excluded), CodeBuddy, and Qwen Code (workspace settings, so only in a bot's own workspace: a project folder's
+  excluded), CodeBuddy, WorkBuddy (the same switch as CodeBuddy), and Qwen Code (workspace settings, so only in a bot's own workspace: a project folder's
   files are the user's). Gemini CLI, Kilo Code, Kiro and Hermes Agent have no switch Codync can use. Project
   knowledge goes in the bot's own notes, and into the project's `CLAUDE.md` or `AGENTS.md` only when the user asks.
 - **Keeping it on.** Where Codync has the switch, the memory screen's "This bot" section offers "<harness>'s own

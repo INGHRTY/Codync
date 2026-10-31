@@ -3,6 +3,7 @@ import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
 import { groupBotReactions, isGroup, isReplyable, isWorking, type Bot, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
+import { CloudBadge } from '../../components/CloudBadge'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Overlay'
@@ -77,24 +78,27 @@ function LivePermission({ entry }: { entry: Entry }) {
   return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
 }
 
-/** Who wrote a message in a group: their avatar and name in their color. */
-export function AuthorLabel({ botId }: { botId?: string | null }) {
+/** Who wrote a message: their avatar and name in their color, or `name` for a bot on another computer. */
+export function AuthorLabel({ botId, name }: { botId?: string | null; name?: string }) {
   const store = useStore()
   const bot = botId ? store.bots.get(botId) : undefined
   return (
     <HStack gap={8}>
       {bot ? <BotAvatar bot={bot} size={26} animated={false} /> : null}
-      <Text size="subheadline" weight="medium" tone="secondary" style={bot ? { color: avatarColor(bot.avatarColor) } : undefined}>{store.authorName(botId)}</Text>
+      <Text size="subheadline" weight="medium" tone="secondary" style={bot ? { color: avatarColor(bot.avatarColor) } : undefined}>{store.authorName(botId, name)}</Text>
+      {/* A room shows which side answered: the gateway, not this computer. */}
+      {bot?.connection ? <CloudBadge cloud size={12} /> : null}
     </HStack>
   )
 }
 
 /** The message a reply quotes, as its first line without Markdown markers: at the top of its bubble, and in the composer while replying. */
-export function QuoteRow({ quote, className }: { quote: ReplyQuote; className?: string }) {
+export function QuoteRow({ quote, className, solid = false }: { quote: ReplyQuote; className?: string; solid?: boolean }) {
+  const color = `var(${solid ? '--secondary-on-chat-user' : '--secondary'})`
   return (
     <HStack gap={6} className={className ?? 'bubble-quote'}>
-      <Icon name="text.bubble" size={12} color="var(--secondary)" />
-      <Text size="footnote" tone="secondary" truncate grow>{`“${messagePreview(quote.text)}”`}</Text>
+      <Icon name="text.bubble" size={12} color={color} />
+      <Text size="footnote" truncate grow style={{ color }}>{`“${messagePreview(quote.text)}”`}</Text>
     </HStack>
   )
 }
@@ -138,7 +142,7 @@ export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWork
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
             ]}
           >
-            {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} /> : null}
+            {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} solid /> : null}
             {entry.data.text}
           </Bubble>
         ) : null}

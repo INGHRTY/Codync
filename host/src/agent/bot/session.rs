@@ -1,14 +1,14 @@
 //! The bot's ACP sessions: starting its agent, new/load, routine runs' sessions.
 
 use super::fast_mode::Listing;
-use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
-use super::{Actor, Conn, Instructions};
+use super::launch::{apply_approval, claude_meta, launch_commands, select_model, start_agent, system_prompt};
+use super::{Actor, Conn, Instructions, NoticeStyle};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::agent::registry::Candidate;
 use crate::chat::{context, memory};
 use crate::store::run_session_key;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
@@ -124,9 +124,42 @@ impl Actor {
         })
     }
 
+    /// A local Hermes bot's own profile on this computer, made the first time it runs: its memory, skills and
+    /// settings, not the user's default profile's. `None` means Hermes runs it in the default profile, which the chat
+    /// says when that isn't the user's own command.
+    async fn hermes_profile(&self) -> Option<String> {
+        if self.cfg.backend != "hermes" || self.cfg.connection.is_some() || self.cfg.command.is_some() {
+            return None;
+        }
+        let profile = crate::agent::hermes_profile::name(&self.cfg);
+        if crate::agent::hermes_profile::exists(&profile) {
+            return Some(profile);
+        }
+        self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Creating the bot's Hermes profile…".into());
+        match crate::agent::hermes_profile::ensure(&self.cfg).await {
+            Ok(profile) => Some(profile),
+            Err(error) => {
+                tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't make the bot's Hermes profile");
+                self.notice(&format!("This bot runs in your default Hermes profile: {error:#}"), NoticeStyle::Error);
+                None
+            }
+        }
+    }
+
+    /// `ensure_session` for the turn: a routine run's setup must end by its time limit, and setup cut short
+    /// mustn't leave the agent opening a session the host never learns of.
+    pub(super) async fn ensure_turn_session(&mut self, slot: Option<&str>) -> Result<()> {
+        let Some(deadline) = self.routine_deadline else { return self.ensure_session(slot).await };
+        let setup = tokio::time::timeout_at(deadline.into(), self.ensure_session(slot)).await;
+        if setup.is_err() {
+            self.drop_unanswered().await;
+        }
+        setup.context("routine session setup timed out")?
+    }
+
     /// Makes sure the agent runs and `slot`'s session (main, or a routine run's) is live;
     /// sets `turn_session`.
-    pub(super) async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
+    async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
         if !self.cfg.connectors.is_empty()
             || self.hub.store.kv_read(&format!("agent-env:{}", self.cfg.backend))?.is_some()
         {
@@ -137,7 +170,16 @@ impl Actor {
             && self.conn.as_ref().is_some_and(|c| c.sessions.load)
             && let Some(c) = self.conn.take()
         {
-            c.acp.kill().await;
+            c.kill().await;
+        }
+        // A bot on another computer's Hermes gateway: its profile there, over HTTP.
+        if self.conn.is_none() && self.cfg.connection.is_some() {
+            self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Connecting to the Hermes gateway…".into());
+            let (gateway, warning) = super::gateway::Gateway::connect(&self.hub, &self.cfg).await?;
+            self.conn = Some(Conn::gateway(gateway));
+            if let Some(warning) = warning {
+                self.notice(&warning, NoticeStyle::Error);
+            }
         }
         if self.conn.is_none() {
             let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
@@ -145,9 +187,10 @@ impl Actor {
                 let msg = msg.to_owned();
                 hub.set_runtime(&id, |r| r.activity = msg);
             };
-            let candidates = launch_commands(&self.cfg)?;
-            // Keys saved from an "environment variable" sign-in.
-            let mut env = crate::agent::auth::env(&self.hub.store, &self.cfg.backend)?;
+            let profile = self.hermes_profile().await;
+            let candidates = launch_commands(&self.cfg, profile.as_deref())?;
+            // Keys saved from an "environment variable" sign-in, and what the harness needs to start.
+            let mut env = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)?;
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});
@@ -205,17 +248,16 @@ impl Actor {
             let res = self.session_request("session/load", params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
             // The agent replays history as session/update before answering; drop it.
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
+            while let Some(Incoming::Request { id, .. }) = conn.try_recv() {
+                let _ = conn.respond_error(id, -32601, "not supported").await;
             }
             match res {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
                     let res = if res.get("configOptions").is_some() || res.get("models").is_some() {
-                        select_model(&conn.acp, &res, &sid, &self.cfg).await?
+                        let res = select_model(conn, &res, &sid, &self.cfg).await?;
+                        apply_approval(conn, &res, &sid, &self.cfg).await
                     } else {
                         res
                     };
@@ -252,7 +294,8 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
-        let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        let options = select_model(conn, &res, &sid, &self.cfg).await?;
+        let options = apply_approval(conn, &options, &sid, &self.cfg).await;
         self.note_options(&sid, &options, Listing::Session);
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;
@@ -267,15 +310,36 @@ impl Actor {
     /// A session request the agent doesn't answer in time stops the agent: a hung one
     /// would otherwise hold the bot, and its Stop, forever.
     pub(super) async fn session_request(&mut self, method: &str, params: Value) -> Result<Value> {
-        let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
-        if let Ok(result) = tokio::time::timeout(SESSION_TIMEOUT, acp.request(method, params)).await {
+        let conn = self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?;
+        conn.opening = matches!(method, "session/new" | "session/load");
+        let answered = tokio::time::timeout(SESSION_TIMEOUT, conn.request(method, params)).await;
+        conn.opening = false;
+        if let Ok(result) = answered {
             return result;
         }
         if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
+            c.kill().await;
         }
         let message = format!("the agent didn't answer {method} within {}s", SESSION_TIMEOUT.as_secs());
         Err(acp::Failure::error(acp::FailureKind::Timeout, message))
+    }
+
+    /// A routine's time limit cut a session request short. An agent that can resume stops, so a session it might
+    /// still open goes with its process; one that can't keeps running rather than lose the sessions it has.
+    async fn drop_unanswered(&mut self) {
+        let Some(conn) = self.conn.as_mut() else { return };
+        if !std::mem::take(&mut conn.opening) {
+            return;
+        }
+        if !conn.sessions.load {
+            // ponytail: that session lasts until the agent next stops; keep the cut-short request's Answer past the
+            // time limit and session/close the id it returns, if that ever matters.
+            tracing::warn!(bot = %self.cfg.id, "a session request was cut short; the agent can't resume, so it keeps running");
+            return;
+        }
+        if let Some(c) = self.conn.take() {
+            c.kill().await;
+        }
     }
 
     /// Drops the main ACP session so the next turn starts a fresh one.
@@ -285,4 +349,4 @@ impl Actor {
 }
 
 /// How long `session/new` and `session/load` may take.
-const SESSION_TIMEOUT: Duration = Duration::from_secs(180);
+const SESSION_TIMEOUT: Duration = Duration::from_mins(3);

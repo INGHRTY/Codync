@@ -53,7 +53,9 @@ impl App {
             Action::Library => self.open_library(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
-            Action::Usage => self.overlays.push(Overlay::Usage),
+            Action::Network => self.open_network(),
+            Action::Hermes => self.open_hermes(),
+            Action::Usage => self.overlays.push(Overlay::Usage(0)),
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
@@ -128,12 +130,36 @@ impl App {
             Overlay::Fields(f) => self.fields_key(f, k),
             Overlay::Skill(s) => self.skill_key(s, k),
             Overlay::Analytics(s) => s.key(k),
+            Overlay::Network(n) => self.network_key(n, k),
+            Overlay::Hermes(h) => self.hermes_key(h, k),
             // A new code: after a failure, or in place of the one shown.
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
                 self.call("pairing", json!({}), After::Pairing);
                 Some(Overlay::Pair(PairCode::Loading))
             }
-            o @ (Overlay::Usage | Overlay::Pair(_)) => {
+            Overlay::LeadAgent(scroll) => {
+                let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
+                let max = super::super::view::lead_agent_scroll_max(width, height);
+                match k.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'I') => None,
+                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::LeadAgent((scroll + 1).min(max))),
+                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::LeadAgent(scroll.saturating_sub(1))),
+                    _ => Some(Overlay::LeadAgent(scroll.min(max))),
+                }
+            }
+            Overlay::Usage(scroll) => {
+                let (_, height) = crossterm::terminal::size().unwrap_or((80, 24));
+                let max = super::super::view::usage_scroll_max(self, height);
+                match k.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P') => None,
+                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::Usage((scroll + 1).min(max))),
+                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::Usage(scroll.saturating_sub(1))),
+                    KeyCode::PageDown | KeyCode::Char(' ') => Some(Overlay::Usage((scroll + 10).min(max))),
+                    KeyCode::PageUp => Some(Overlay::Usage(scroll.saturating_sub(10))),
+                    _ => Some(Overlay::Usage(scroll)),
+                }
+            }
+            o @ Overlay::Pair(_) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None
                 } else {

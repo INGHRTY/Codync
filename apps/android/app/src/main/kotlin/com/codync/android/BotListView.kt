@@ -80,7 +80,7 @@ import kotlinx.serialization.json.putJsonArray
         PullToRefresh({ store.reconnect(); store.refreshComputers() }, Modifier.fillMaxSize(), indicatorTop = top + 50.dp) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 56.dp, bottom = bottomInset)) {
             // A computer waiting for an update has its card instead; its bots may not be readable yet.
-            state.mismatch?.let { mismatch -> item("update") { UpdateNeededCard(state, mismatch, Modifier.padding(vertical = 8.dp)) } }
+            state.mismatch?.let { mismatch -> item("update") { UpdateNeededCard(state, mismatch, store::requestHostUpdate, Modifier.padding(vertical = 8.dp)) } }
             if (roster.isEmpty() && state.mismatch == null) item {
                 EmptyRoster(canCreate = usable, hasComputer = usable, create = newBot, showComputers = manage)
             }
@@ -205,8 +205,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (bot.lead) Symbol("star.fill", size = 13.dp, tint = Palette.tertiary, contentDescription = tr("Lead bot"))
-                    else if (bot.pinned) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
+                    if (bot.pinned && !bot.lead) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
                     Text(bot.name, Modifier.weight(1f, fill = false), style = Type.body.semibold, color = Palette.text, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
                 }
@@ -239,7 +238,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
         bot.status == "error" -> Text(messagePreview(bot.lastMessage ?: "Something went wrong"), style = Type.subheadline, color = Palette.danger,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         else -> Text(messagePreview(bot.lastMessage ?: if (bot.kind == "group") "${bot.members.size} bots"
-            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) tr("Personal workspace") else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
+            else "${backendName(state, bot.backend)} · ${when { bot.isCloud -> tr("Hermes gateway"); bot.managedWorkspace -> tr("Personal workspace"); else -> bot.cwd.trimEnd('/').substringAfterLast('/') }}"),
             style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

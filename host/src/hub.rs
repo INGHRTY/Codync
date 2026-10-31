@@ -75,6 +75,12 @@ pub struct Hub {
     pub routines: crate::routines::Routines,
     pub team: crate::chat::team::Requests,
     pub groups: crate::chat::group::Rooms,
+    /// The user's other computers (codync-network), once this one is in a network.
+    pub network: crate::network::Network,
+    /// Requests this computer's bots sent to bots on the other computers, until they're answered.
+    pub waiting: crate::chat::team::remote::Waiting,
+    /// The user's cloud assistant: its requests to this computer's bots and their replies.
+    pub assistant: crate::chat::team::assistant::Replies,
     pub store: Store,
     pub host_id: String,
     pub identity: Identity,
@@ -118,6 +124,9 @@ impl Hub {
             routines: crate::routines::Routines::default(),
             team: crate::chat::team::Requests::default(),
             groups: crate::chat::group::Rooms::default(),
+            network: crate::network::Network::default(),
+            waiting: crate::chat::team::remote::Waiting::default(),
+            assistant: crate::chat::team::assistant::Replies::default(),
             store,
             host_id,
             identity,
@@ -228,12 +237,13 @@ impl Hub {
             }
         }
         crate::agent::fallback::tidy(&mut cfg);
-        validate(&cfg)?;
+        validate(&self.store, &cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
         {
             let _g = self.emit_lock.locked();
             self.store.save_bot(&cfg)?;
         }
+        crate::network::publish(self);
         if !cfg.is_group() {
             self.spawn_bot(cfg.clone());
             crate::market::agent_sign_in::ask_before_first_message(self, &cfg);
@@ -270,13 +280,14 @@ impl Hub {
             cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
         }
         crate::agent::fallback::tidy(&mut cfg);
-        validate(&cfg)?;
+        validate(&self.store, &cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
         crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
         {
             let _g = self.emit_lock.locked();
             self.store.save_bot(&cfg)?;
         }
+        crate::network::publish(self);
         if !cfg.is_group() {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&row.config) {
                 crate::chat::memory::changed(self, Some(&id));
@@ -290,6 +301,8 @@ impl Hub {
     pub fn delete_bot(&self, id: &str) -> Result<()> {
         crate::chat::lead::may_delete(&self.store, id)?;
         self.routines.disable_bot(&self.store, id)?;
+        // Its agent on a gateway keeps the profile it was given, but not a token that answers any more.
+        self.store.kv_delete(&format!("mcp-bridge-token:{id}"))?;
         self.team.end_turn(id);
         self.groups.stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
@@ -301,6 +314,7 @@ impl Hub {
             let _ =
                 self.events.send(json!({"type": "bot", "rev": rev, "bot": {"id": id, "deleted": true, "rev": rev}}));
         }
+        crate::network::publish(self);
         // Its shared files and artifacts are unreachable once the bot is deleted.
         let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
         let bot = id.to_owned();

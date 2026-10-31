@@ -32,6 +32,9 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Chat messages](features/chat-messages.md)
 - [Group chats and replies](features/groups-and-replies.md)
 - [Bot-to-bot collaboration](features/bot-collaboration.md)
+- [codync-network](features/codync-network.md) (your computers' network: bots message bots on the user's other computers)
+- [Cloud assistants](features/cloud-assistants.md) (ChatGPT, Claude and others message the bots through the Codync connector)
+- [codync-network and cloud assistants: design](design/codync-network.md) (why iroh, connectors and relays, trust, addresses, quiet letters, the connector's choices, next steps)
 - [Context and memory](features/context-and-memory.md)
 - [Bot memory and compaction](design/bot-memory.md) (design; storage, gate and dreaming built, compaction to come)
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
@@ -54,6 +57,7 @@ Source review, a passing build, local integration tests and production acceptanc
 ## Plans
 
 - [Android parity and acceptance](plans/android-app.md)
+- [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
 - [Error tracking detail](plans/error-tracking-detail.md) (symbolicated iPhone crashes and sessions, built; consented problem reports, proposed)
 

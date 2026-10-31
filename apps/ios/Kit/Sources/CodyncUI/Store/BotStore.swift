@@ -58,11 +58,17 @@ public final class BotStore {
     public internal(set) var hello: Hello?
     /// The host's version and `minApp`, kept even when the rest of its `hello` can't be read.
     public internal(set) var hostVersion: HostVersion?
+    /// An update this phone asked of the computer; cleared when its version changes.
+    public internal(set) var hostUpdate: HostUpdate?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The computer's remote screen (`nil`: the host predates it).
     public internal(set) var screen: ScreenState?
+    /// The computer's network of the user's computers (`nil`: the host predates it).
+    public internal(set) var network: NetworkView?
+    /// The Hermes gateways on the user's other computers (empty from a host that predates them).
+    public internal(set) var connections: [HermesConnection] = []
     /// Installed on the computer, for the Plugins screen and bot settings.
     public internal(set) var installedConnectors: [InstalledConnector] = []
     public internal(set) var installedSkills: [InstalledSkill] = []
@@ -231,8 +237,10 @@ public final class BotStore {
     /// A group's bots that still exist.
     public func members(of group: Bot) -> [Bot] { group.members.compactMap { bots[$0] } }
 
-    /// Display name of an entry's author in a group chat.
-    public func authorName(_ id: String?) -> String { id.flatMap { bots[$0]?.name } ?? "A deleted bot" }
+    /// Display name of an entry's author; `fallback` for one that isn't this computer's (a bot on another computer).
+    public func authorName(_ id: String?, fallback: String? = nil) -> String {
+        id.flatMap { bots[$0]?.name } ?? fallback ?? "A deleted bot"
+    }
 
     func updateComputer(_ change: (inout Computer) -> Void) {
         var c = computer

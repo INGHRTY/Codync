@@ -25,6 +25,7 @@ export function agentTint(registry: string | null | undefined) {
     case 'qwen-code': return 'rgb(97, 92, 237)'
     case 'amp-acp': return 'rgb(242, 79, 64)'
     case 'kiro': return 'rgb(143, 69, 255)'
+    case 'dsh': return 'rgb(77, 107, 254)'
     case 'cortex-code': return 'rgb(41, 181, 232)'
     case 'omp': return 'linear-gradient(to bottom right, rgb(237, 74, 191), rgb(155, 77, 255), rgb(90, 216, 230))'
     default: return 'var(--text)'
@@ -95,6 +96,9 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
   const curated = backend.curated === true
   const signedIn = auth?.signedIn ?? backend.signedIn ?? null
   const nodeMissing = backend.node === 'missing'
+  // It has run on this computer: its CLI is there, or an earlier check started it. Until then, a
+  // check can download it, so only Set up starts one.
+  const setUp = installed || backend.signedIn != null || auth !== null
   const host = store.hostName
 
   const check = async () => {
@@ -127,10 +131,10 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
     await store.refreshBackends()
   }
 
-  // A known "signed in" needs no agent start; everything else asks the agent (which can't
-  // start without its Node.js).
+  // A known "signed in" needs no agent start; one set up asks the agent (which can't start
+  // without its Node.js). Opening never downloads one: that waits for Set up.
   useEffect(() => {
-    if ((recheck || backend.signedIn !== true) && !nodeMissing) void check()
+    if ((recheck || (setUp && backend.signedIn !== true)) && !nodeMissing) void check()
   }, [])
 
   // Back from a terminal or key form: see what changed.
@@ -151,6 +155,7 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
     ? (auth === null ? `Checking with ${backend.name}… The first check can download it.` : 'Checking…')
     : signedIn === true ? 'Signed in.'
     : nodeMissing ? 'Add Node.js first.'
+    : !setUp ? (curated ? 'Install it first.' : `Not set up on ${host} yet.`)
     : signedIn === false ? 'Not signed in yet.'
     : `Couldn't tell. Skip this if you've already signed in on ${host}.`
 
@@ -169,6 +174,10 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
   )
 
   const options: ReactNode[] = []
+  // A registry agent downloads on its first start; an app's own CLI comes from Install above.
+  if (!setUp && !curated && !checking && !nodeMissing) {
+    options.push(optionRow('setup', 'Set up', `Downloads ${backend.name} on ${host} if it needs to, then checks its sign-in.`, 'arrow.down.circle', () => void check()))
+  }
   // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
   if (signedIn !== true && !checking) {
     if (auth?.login) options.push(optionRow('login', 'Sign in', `In a terminal on ${host}. Links open here.`, 'terminal', () => setRoute({ kind: 'terminal', method: null })))

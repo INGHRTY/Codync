@@ -1,7 +1,7 @@
 // Artifacts and the Library on the wire (`host/src/chat/artifacts.rs`, `host/src/chat/library.rs`).
 import type { Attachment, ReplyQuote, SharedFile } from './models'
 import { isBelow } from './compat.ts'
-import { decodeFileChunk } from './files.ts'
+import { decodeFileChunk, sha256Hex } from './files.ts'
 
 /** An HTML artifact a bot published; `readArtifact` returns its HTML. */
 export interface Artifact {
@@ -94,9 +94,4 @@ export async function readArtifactHTML(read: (offset: number) => Promise<Artifac
     if ((await sha256Hex(html)) !== version) throw new Error('The artifact failed its integrity check; try again')
     return { artifact, bytes: html }
   }
-}
-
-async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
-  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')
 }

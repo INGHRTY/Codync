@@ -72,6 +72,7 @@ extension BotStore {
               pasted: [String] = [], call: String? = nil) -> Task<SendProgress, Never>? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !files.isEmpty, !retired else { return nil }
+        if call == nil { ReviewInvitation.shared.sent(nonce) }
         var data = EntryData(text: trimmed, status: "sending", clientNonce: nonce)
         data.call = call
         // Shown at once; the computer's own quote replaces it.
@@ -247,6 +248,15 @@ extension BotStore {
         guard let url = Self.attachmentCache(file.id) else { return nil }
         if let data = try? Data(contentsOf: url) { return data }
         guard let client = live, let data = try? await client.readUpload(botId: botId, id: file.id) else { return nil }
+        Self.cacheAttachment(file.id, data)
+        return data
+    }
+
+    /// A file a bot shared, read whole and checked: on disk after the first fetch (shared files never change).
+    public func sharedFileData(_ file: SharedFile, entryId: String) async -> Data? {
+        guard let url = Self.attachmentCache(file.id) else { return nil }
+        if let data = try? Data(contentsOf: url) { return data }
+        guard let client = live, let data = try? await FileDownload().data(client: client, entryId: entryId, file: file) else { return nil }
         Self.cacheAttachment(file.id, data)
         return data
     }

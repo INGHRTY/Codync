@@ -55,7 +55,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 crate::chat::outbox::call(hub, bot, name, &b["arguments"]).await?
             }
         }
-        "teamCall" => crate::chat::team::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])?,
+        // An agent on this computer that isn't a bot (`codync-host mcp network`).
+        "agentCall" => {
+            crate::chat::team::assistant::local_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])
+                .await?
+        }
+        "teamCall" => {
+            crate::chat::team::call_async(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
+        }
         "manageCall" => {
             crate::chat::manage::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }

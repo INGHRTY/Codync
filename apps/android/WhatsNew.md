@@ -7,40 +7,16 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.26.0
+## 2.31.0
 
 ### zh-Hant
-- Bot 工作時，Gemini 與 OpenAI 的語音會主動告訴你它在做什麼、有沒有等你核准或遇到問題，做完就念出結果。
-- 通話中短暫斷線再連上時，錯過的回覆會補念給你聽。
-- Gemini 或 OpenAI 通話斷線時會自動重新連上並接著聊，不必重打。
-- 通話的通知會顯示通話時長、狀態和 Bot 正在做的事。
-- Gemini 與 OpenAI 的語音用你正在說的語言回答，你換語言它就跟著換。
+- 對話排法改成 Grok Bot 的樣子：Bot 的訊息較窄、外側留白，只有你自己的訊息是實心泡泡。
+- 進行中的那一輪，計畫浮在輸入框上方，隨時看得到接下來要做什麼。
+- 你自己伺服器上的 Hermes gateway 在電腦上的 Codync 加入後，「管理電腦」→「Hermes connections」看得到；那台電腦的 Bot 能加入同一個對話，各自擁有自己的 Hermes profile，也看得到你附在訊息裡的圖片（群組對話也一樣）。
+- 用量頁面說明 Hermes 不提供額度上限，不再空白。
 
 ### en-US
-- While the bot works, the Gemini and OpenAI voice says what it's doing, when an approval waits or something fails, and reads the result.
-- Replies missed while a call reconnects are read once it's back.
-- A dropped Gemini or OpenAI call reconnects without hanging up.
-- The call's notification shows its length, state and what the bot is doing.
-- The Gemini and OpenAI voice answers in the language you speak and follows when you switch.
-
-## 2.25.0
-
-### zh-Hant
-- 每台電腦都有一個主助理，固定在列表最上面：它會主動跟進你的事，每天兩次看看有沒有該提醒或能幫忙的，需要時請你授權 Gmail 等服務；打電話給它時由它先開口。
-- 語音通話：連線中顯示來回的線，中途換語音不必掛斷，結束只留一行標題，點開看逐字稿。
-- Bot 可以做 Artifact：報告、追蹤表、儀表板這類要回來看的內容會以卡片出現在聊天裡，點開看完整內容，直接在下方留言請它改，改好就自動更新。
-- 每個 Bot 的「資料庫」收齊它做的 Artifact，以及聊天裡分享過的檔案和圖片。
-- 可以建立使用 Hermes Agent 的 Bot。
-- Bot 之間交辦工作不必等待，對方的回覆會回到發問的 Bot，再由它回覆你。
-- 帳號選單裡的「電腦與設定」和它打開的頁面同名。
-- 新增聯結器失敗後再試一次，會使用你改好的金鑰。
-- 在設定開啟「顯示思考細節」後，點一下工作中 Bot 的狀態膠囊，就能展開這一輪的思考與步驟。
-- 點對話上方的 Bot 會打開它的詳情、資料庫與設定；「新會話」改到 Bot 列表的長按選單。
-
-### en-US
-- Each computer has a lead bot on top that follows up, checks in twice a day and speaks first on calls.
-- Calls leave one titled line; tap it for the transcript. Change voices mid-call as settings close.
-- Bots make artifacts as chat cards you can ask to edit; each bot's Library holds them and its files.
-- Create Hermes Agent bots; bots hand off work without waiting.
-- Settings › Show thinking details unfolds a bot's steps.
-- Tap a chat's title for bot details; New session is under touch & hold.
+- The conversation is laid out like Grok Bot: a bot's messages stay narrow with room on the outside, and only your own message is solid.
+- The running turn's plan floats above the composer, so what comes next stays in view.
+- A Hermes gateway on your own server, added in Codync on your computer, shows up in Manage computers > Hermes connections. Its bots join the same conversation, each in its own profile, and they see the photos you attach to a message, group chats included.
+- Usage says Hermes reports no limits, instead of showing nothing.

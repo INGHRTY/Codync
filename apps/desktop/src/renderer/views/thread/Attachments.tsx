@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { isImageName, type Attachment } from '@shared/models'
+import { isImageName, type Attachment, type SharedFile } from '@shared/models'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
@@ -38,32 +38,35 @@ export function AttachmentList({ attachments, botId }: { attachments: Attachment
       {attachments.map((file) =>
         isImageName(file.name) ? (
           <button key={file.id} className="attachment-image-button" aria-label={file.name} onClick={() => setViewing(file)}>
-            <AttachmentImage file={file} botId={botId} fit="thumbnail" />
+            <AttachmentImage source={{ file, botId }} fit="thumbnail" />
           </button>
         ) : (
           <HStack key={file.id} gap={8} className="attachment-file">
-            <Icon name={attachmentSymbol(file.name)} size={16} color="var(--secondary)" />
+            <Icon name={attachmentSymbol(file.name)} size={16} color="var(--secondary-on-chat-user)" />
             <VStack gap={1} shrink>
-              <Text size="subheadline" tone="text" truncate className="attachment-file-name">{file.name}</Text>
-              <Text size="caption2" tone="tertiary">{byteCount(file.size)}</Text>
+              <Text size="subheadline" truncate className="attachment-file-name" style={{ color: 'var(--on-chat-user)' }}>{file.name}</Text>
+              <Text size="caption2" style={{ color: 'var(--secondary-on-chat-user)' }}>{byteCount(file.size)}</Text>
             </VStack>
           </HStack>
         ),
       )}
-      <AttachmentViewer file={viewing} botId={botId} close={() => setViewing(null)} />
+      <AttachmentViewer source={viewing && { file: viewing, botId }} close={() => setViewing(null)} />
     </VStack>
   )
 }
 
-/** A sent image full size, in a sheet. */
-export function AttachmentViewer({ file, botId, close }: { file: Attachment | null; botId: string; close: () => void }) {
+/** Where a picture's bytes are on the computer: a file sent with a message, or one a bot shared. */
+export type ImageSource = { file: Attachment; botId: string } | { file: SharedFile; entryId: string }
+
+/** A picture full size, in a sheet. */
+export function AttachmentViewer({ source, close }: { source: ImageSource | null; close: () => void }) {
   return (
-    <Sheet open={file !== null} onClose={close} width={720} height={560}>
-      {file ? (
+    <Sheet open={source !== null} onClose={close} width={720} height={560}>
+      {source ? (
         <SheetPage>
-          <ModalHeader title={file.name} />
+          <ModalHeader title={source.file.name} />
           <div className="attachment-viewer">
-            <AttachmentImage file={file} botId={botId} fit="full" />
+            <AttachmentImage source={source} fit="full" />
           </div>
         </SheetPage>
       ) : null}
@@ -71,23 +74,36 @@ export function AttachmentViewer({ file, botId, close }: { file: Attachment | nu
   )
 }
 
-/** A sent image, fetched from the computer once and then read from the cache. */
-export function AttachmentImage({ file, botId, fit }: { file: Attachment; botId: string; fit: 'icon' | 'thumbnail' | 'full' }) {
+/** A picture from the computer, fetched once and then read from the cache. */
+export function AttachmentImage({ source, fit }: { source: ImageSource; fit: 'icon' | 'thumbnail' | 'full' }) {
   const store = useStoreRef()
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     let revoked = false
     let made: string | null = null
-    void store.attachmentData(file.id, botId).then((data) => {
-      if (!data || revoked) return
-      made = URL.createObjectURL(new Blob([data as BlobPart]))
-      setUrl(made)
+    const read = () => {
+      const data = 'entryId' in source ? store.sharedFileData(source.file, source.entryId) : store.attachmentData(source.file.id, source.botId)
+      void data.then((data) => {
+        if (!data || revoked || made) return
+        made = URL.createObjectURL(new Blob([data as BlobPart]))
+        setUrl(made)
+      })
+    }
+    // A chat shown before the computer connects reads its pictures again once it comes online.
+    let online = store.connection.kind === 'online'
+    const stop = store.subscribe(() => {
+      const now = store.connection.kind === 'online'
+      if (now && !online && !made) read()
+      online = now
     })
+    read()
     return () => {
       revoked = true
+      stop()
       if (made) URL.revokeObjectURL(made)
     }
-  }, [store, file.id, botId])
+    // A file's id names its bytes for good; `source` is a new object every render.
+  }, [store, source.file.id])
   if (!url) {
     return (
       <div className={`attachment-placeholder ${fit}`}>

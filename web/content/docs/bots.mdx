@@ -4,7 +4,7 @@ You can make as many bots as you like, and they work at the same time. A reviewe
 
 ## Your lead bot
 
-Every computer comes with one bot of its own, named **Codync** until you rename it: your lead bot. It sits at the top of the list with a star, and it's the one to talk to first.
+Every computer comes with one bot of its own, named **Codync** until you rename it: your lead bot. It sits at the top of the list with a gold star at the bottom-right of its avatar, and it's the one to talk to first. Open its details and tap or click the larger star to read what your **Lead agent** does. In the terminal, click its gold star or select the lead bot and press `I`; use the arrow keys to scroll and `Esc` to close.
 
 - **It takes initiative.** It keeps track of what you're working toward, follows up on what's still open and offers the next step. When it could help more with access to one of your services, such as Gmail or your calendar, it says what for and asks you to connect it, with a card in the chat.
 - **It checks in.** Its routine **Check in** runs at 9:00 and 18:00 on your computer's clock. If something deserves your attention, or there's a step it can take for you, it messages you; otherwise it stays quiet. What it reads in your email, documents or web pages is information to it, never instructions, and it doesn't send, forward, reply to, delete, pay for or post anything you didn't ask for in the chat. It skips a check-in while your agent plan is above 75% of a limit. Change the times, pause it or delete it like any routine. See [Routines](/docs/routines).
@@ -39,6 +39,26 @@ You can also ask a bot in its chat to rename itself or change its own instructio
 
 Changing the agent or the model starts a new agent session. The chat history stays.
 
+## Runs on: this computer or a Hermes gateway
+
+A bot runs on this computer by default. It can also run on a **Hermes gateway**: a Hermes install on a computer you keep running, such as your VPS. Its bot then works on that computer, not this one, and answers here beside this computer's bots, in the same chats and group chats.
+
+Add a gateway once, from the computer that runs Codync's host:
+
+- **Desktop:** **Settings → Hermes connections**, then **Add gateway**: a name, its base URL (`https://vps.example.com`), the profile its plain routes serve (usually `default`), and the key that profile answers with. **Test connection** checks it and lists the models it offers.
+- **Terminal UI:** press `H`, then `n`.
+- **iPhone and Android:** read-only. Phones list the gateways and the bots on each, with their profiles; adding one and typing its key happens on the computer.
+
+Then open the bot's settings and set **Runs on** to that gateway. A bot on a gateway:
+
+- runs as Hermes there, in its own **Profile**, so its memory, skills and sessions stay apart from every other bot's. Codync makes the profile on the gateway the first time the bot needs it; type a name to choose one, or leave it empty for one Codync names from the bot's id;
+- has no workspace, Fast mode, fallbacks or agent of this computer to pick: its model is what the gateway's profile offers;
+- can join group chats with this computer's bots, but can't be the lead bot, manage the team, or use this computer's connectors and skills;
+- sees the photos you attach to a message, in that message itself (up to 6 MB of images per turn, in PNG, JPEG, GIF or WebP). Other files stay on this computer: it is told their names and says it can't open them;
+- messages you, reacts, uses its own memory, asks other bots and runs its routines through Codync's tools over the network. Codync writes them into the bot's profile on the gateway the first time it connects, which needs that gateway's SSH host (or a profile key you saved yourself); a bot without either still answers, just without those tools. Files and artifacts of this computer, connectors, skills and computer use stay on this computer.
+
+A cloud bot is marked with a cloud: on its avatar in the bot list, beside its name in a group chat, and as `[cloud]` in its row in the terminal UI. Gateways are only on the computer whose host has them: another computer sees its own list.
+
 ## Workspace: its own folder or a project
 
 The **Workspace** setting is the folder the bot starts in.
@@ -70,6 +90,8 @@ How approval cards work: [Conversations](/docs/conversations#approval-cards).
 - **Notifications:** notify you when this bot finishes, fails or needs you. Turn it off to keep the bot quiet.
 - **Use the computer:** let this bot see the screen and use the mouse and keyboard. The computer needs Computer access set up first. See [Computer use](/docs/computer-use).
 - **Manage the team:** let this bot create bots and change any bot's setup, its own included. Bots it creates can do the same, with no more access than it has: they take its approval setting, connectors and skills, and never get computer use. Only you can turn this on, and it's off by default. See [Teamwork](/docs/teamwork).
+- **Offered to the network:** shows while the computer is in a network of your computers. Turn it off and your other computers don't list this bot and can't message it; it can still message bots there and get their replies. In the terminal UI it's **Network**. See [Teamwork](/docs/teamwork#choose-who-reaches-your-bots).
+- **Reachable by cloud assistants:** shows while cloud assistants are on for the computer. Turn it off and ChatGPT or Claude don't list this bot and can't message it, also when they ask through another of your computers. In the terminal UI it's **Assistants**. See [Cloud assistants](/docs/cloud-assistants).
 
 ## Connectors and skills
 
@@ -85,7 +107,7 @@ Each bot keeps a long-term memory across sessions, which you can read on its **M
 - **Order:** drag bots into the order you want. The computer keeps the order, so it's the same on every device. iPhone: touch and hold a bot, then drag it. Desktop: drag it, or select it and press Alt+Up or Alt+Down. Terminal UI: `J` and `K`.
 - **Computers:** with more than one computer, each has a heading above its bots. Drag a heading (iPhone: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
 - **Hide:** iPhone: touch and hold the bot, then **Hide from list**. Desktop: right-click it, then **Hide from sidebar**. A hidden bot sends no notifications. To bring it back:
-  - **iPhone:** tap the account button at the top left of the Bots tab, open **Computers & settings**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
+  - **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Desktop:** open **Settings → General** and click the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Terminal UI:** press Ctrl+K, type `unhide`, and pick **Unhide** followed by the bot's name.
 - **Mark as read:** clears a bot's unread badge, from the same menus.

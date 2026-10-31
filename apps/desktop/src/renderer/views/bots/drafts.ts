@@ -33,11 +33,13 @@ export function newDraft(): BotDraft {
   return { name: '', description: '', avatarColor: pick(AVATAR_COLORS).id, avatarShape: pick(AVATAR_SHAPES), backend: 'claude', cwd: '', permission: 'auto' }
 }
 
-/** A saved bot keeps a name; only a new one may go without (the host names it after its first conversations). */
-export const isValid = (d: BotDraft) => d.name.trim() !== ''
+/** A saved bot keeps a name; only a new one may go without (the host names it after its first conversations).
+ *  A bot on a gateway needs that gateway chosen. */
+export const isValid = (d: BotDraft) => d.name.trim() !== '' && (!d.connection || d.connection.trim() !== '')
 
-/** What the host should get: no stale command unless the agent is custom. */
-export const normalized = (d: BotDraft): BotDraft => (d.backend === 'custom' ? d : { ...d, command: null })
+/** What the host should get: a cloud bot always runs Hermes there, and no stale command unless the agent is custom. */
+export const normalized = (d: BotDraft): BotDraft =>
+  d.connection ? { ...d, backend: 'hermes', command: null } : d.backend === 'custom' ? d : { ...d, command: null }
 
 /**
  * Picks an installed agent we know (a registry agent nobody chose is never the default);
@@ -45,6 +47,8 @@ export const normalized = (d: BotDraft): BotDraft => (d.backend === 'custom' ? d
  * the host turns on every one it can run.
  */
 export function fillDefaults(store: BotStore, draft: BotDraft): BotDraft {
+  // A gateway bot runs Hermes there; what's installed on this computer doesn't matter.
+  if (draft.connection) return { ...draft, backend: 'hermes' }
   const next = { ...draft }
   const backends = store.hello?.backends ?? []
   const first = backends.find((b) => b.available && b.curated === true)

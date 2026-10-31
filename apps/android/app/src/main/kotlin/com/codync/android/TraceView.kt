@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.Entry
+import com.codync.android.core.PlanStep
 import com.codync.android.design.*
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -65,6 +66,13 @@ internal fun workingSteps(entries: List<Entry>): List<Entry> {
     return entries.filter { it.turn == turn && it.isWorkingStep }
 }
 
+/** The running turn's plan, for the tray above the composer: its turn and its steps. */
+internal fun runningPlan(entries: List<Entry>): Pair<Long, List<PlanStep>>? {
+    val turn = runningTurn(entries, working = true) ?: return null
+    val steps = entries.firstOrNull { it.turn == turn && it.kind == "plan" }?.plan.orEmpty()
+    return if (steps.isEmpty()) null else turn to steps
+}
+
 /** The running turn's thoughts start `unfolded`, so its reasoning reads as it comes in. */
 @Composable internal fun TraceRow(entry: Entry, unfolded: Boolean) {
     val d = entry.data
@@ -88,12 +96,12 @@ internal fun workingSteps(entries: List<Entry>): List<Entry> {
                 Symbol("checklist", size = 16.dp, tint = Palette.text)
                 Text(tr("Plan"), style = Type.subheadline.bold, color = Palette.text)
             }
-            for (item in (d["entries"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }) {
-                val status = item.text("status")
+            for (step in entry.plan) {
+                val done = step.status == "completed"
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Symbol(when (status) { "completed" -> "checkmark.circle.fill"; "in_progress" -> "circle.dotted"; else -> "circle" }, size = 15.dp,
-                        tint = if (status == "completed") Palette.accent else Palette.tertiary)
-                    Text(item.text("content").orEmpty(), style = Type.footnote.copy(textDecoration = if (status == "completed") TextDecoration.LineThrough else null),
+                    Symbol(when (step.status) { "completed" -> "checkmark.circle.fill"; "in_progress" -> "circle.dotted"; else -> "circle" }, size = 15.dp,
+                        tint = if (done) Palette.accent else Palette.tertiary)
+                    Text(step.content, style = Type.footnote.copy(textDecoration = if (done) TextDecoration.LineThrough else null),
                         color = Palette.text)
                 }
             }

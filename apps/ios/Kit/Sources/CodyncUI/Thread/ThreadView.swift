@@ -42,6 +42,10 @@ public struct ThreadView: View {
                         .padding(.bottom, 8)
                         .transition(.opacity)
                 } else {
+                    // The running turn's plan floats over the box its answer will come from.
+                    if working, let plan = Entry.runningPlan(model.chat(botId)) {
+                        PlanTray(turn: plan.turn, steps: plan.steps) { showTrace = true }
+                    }
                     Composer(botId: botId, replyingTo: $replyingTo,
                              onCall: !calling && bot != nil ? { calling = true } : nil,
                              onInterrupt: callSpeaking ? interruptCall : nil)
@@ -65,6 +69,9 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
+            .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
+                           && openArtifact == nil && openCall == nil && details == nil && !editingGroup
+                           && model.composerDraft(for: botId).isEmpty && model.fileDownloads.export == nil)
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -169,7 +176,7 @@ public struct ThreadView: View {
         }
         if model.mismatch != nil { return "Needs update" }
         switch model.hostRoute {
-        case .relay: return "Connected through Cloudflare"
+        case .relay: return RelayCopy.connected(cloud: model.computer.cloud)
         case .direct: return "Connected over Wi-Fi or Tailscale"
         case nil: return "Connected"
         }

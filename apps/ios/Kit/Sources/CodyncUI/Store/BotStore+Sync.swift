@@ -16,7 +16,7 @@ extension BotStore {
                     // Reached, but nothing to sync until one side updates. A host update restarts
                     // the link (and this loop) anyway; this catches one that doesn't.
                     setConnection(.online)
-                    try await Task.sleep(for: Self.mismatchRecheck)
+                    try await Task.sleep(for: hostUpdateOffer() == .updating ? Self.updatingRecheck : Self.mismatchRecheck)
                     continue
                 }
                 requestedSince = rev
@@ -60,6 +60,8 @@ extension BotStore {
         guard !Task.isCancelled, !retired else { return }
         // hello first: whatever the version change shows (notices, reminders) reads it.
         hello = h
+        // The list travels with every hello: a save or delete that happened while this phone was away shows.
+        if let listed = h.connections { connections = listed }
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
     }
 
@@ -70,6 +72,7 @@ extension BotStore {
             refetchAll()
             rewound = false
             unreadable = false
+            hostUpdate = nil
         }
         cacheStamp = nil
         // An update notice may appear or go away with it.
@@ -78,7 +81,7 @@ extension BotStore {
 
     private func apply(_ event: HostEvent) {
         switch event {
-        case let .hello(id, hostRev, newUsage, newScreen):
+        case let .hello(id, hostRev, newUsage, newScreen, newNetwork):
             if let hostId, hostId != id {
                 // Different host database: start over.
                 resetMirror()
@@ -86,6 +89,7 @@ extension BotStore {
             hostId = id
             setUsage(newUsage)
             screen = newScreen
+            network = newNetwork
             let hostRewound = hostRev < rev
             if hostRewound { rev = 0 }
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
@@ -123,6 +127,10 @@ extension BotStore {
             setUsage(u)
         case let .screen(s):
             screen = s
+        case let .network(view):
+            network = view
+        case let .connections(list):
+            connections = list
         case let .artifact(artifact):
             artifacts.upsert(artifact)
         case .resync:

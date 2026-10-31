@@ -10,7 +10,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
-// Accounts, account computers and starting over: what the account sheet and Computers & settings ask for.
+// Accounts, account computers and starting over: what the account sheet, Computer management and Settings ask for.
 
 internal fun AppStore.signIn(provider: SignInProvider) = sessionAction {
     Analytics.capture(AnalyticsEvent.SignInStarted(provider))
@@ -124,7 +124,8 @@ private suspend fun AppStore.askForAccess(target: CloudComputer, renew: Boolean)
 }
 
 /** Switch only after approval, retiring the old channel and its writers before replacing its mirror. */
-internal fun AppStore.useApprovedComputer(computer: Computer, requestId: String) {
+internal fun AppStore.useApprovedComputer(approved: Computer, requestId: String) {
+    val computer = approved.keepingDevicePicks(state.value.computers.firstOrNull { it.id == approved.id && it.signKey == approved.signKey })
     // Approval is already confirmed by the cloud, even when switching must wait.
     mutableState.update { it.copy(approvedAccess = it.approvedAccess + (computer.id to requestId)) }
     val contextId = state.value.contextId
@@ -165,12 +166,7 @@ fun AppStore.revokeAccess(computerId: String) = action("revoke") {
 }
 
 /** The computer's badge color, picked on this phone (an `AvatarPalette` id). */
-fun AppStore.setColor(color: String) = action("color") {
-    val computer = state.value.computers.firstOrNull() ?: return@action
-    val changed = computer.copy(color = color)
-    withContext(Dispatchers.IO) { local.saveComputers(listOf(changed)) }
-    mutableState.update { it.copy(computers = listOf(changed)) }
-}
+fun AppStore.setColor(color: String) = action("color") { changeComputer { it.copy(color = color) } }
 
 /**
  * Remove: forgets the computer here. Approved through the account, its grant goes too (as on iOS), or it

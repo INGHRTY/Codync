@@ -40,6 +40,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
             goto(buf, area, app, g, &items);
         }
         Overlay::Help(filter) => help(buf, area, filter),
+        Overlay::LeadAgent(scroll) => super::lead_agent::lead_agent(buf, area, *scroll),
         Overlay::Confirm(c) => {
             let t = theme();
             let r = centered(area, 62, 8);
@@ -125,7 +126,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         }
         Overlay::Form(form) => form_view(buf, area, app, form),
         Overlay::Group(g) => group_view(buf, area, app, g),
-        Overlay::Usage => usage(buf, area, app),
+        Overlay::Usage(scroll) => usage(buf, area, app, *scroll),
         Overlay::Pair(code) => pair(buf, area, code),
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
@@ -137,6 +138,8 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Fields(f) => super::super::sheets::fields(buf, area, f),
         Overlay::Skill(s) => super::skill::skill(buf, area, app, s),
         Overlay::Analytics(s) => super::analytics::analytics(buf, area, s),
+        Overlay::Network(n) => super::network::network(buf, area, n),
+        Overlay::Hermes(h) => super::hermes::hermes(buf, area, app, h),
     }
 }
 

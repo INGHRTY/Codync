@@ -8,6 +8,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
+pub mod bridge;
 mod remote;
 pub use remote::serve_remote;
 
@@ -25,7 +26,7 @@ pub fn acp_server(name: &str, exe: &std::path::Path, args: &[&str], port: u16) -
     })
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Server {
     Chat,
     Connectors,
@@ -35,6 +36,8 @@ pub enum Server {
     Manage,
     Memory,
     Composio,
+    /// For agents on this computer that aren't Codync bots; `bot` is the agent's name.
+    Network,
 }
 
 const INSTRUCTIONS: &str = "Operate this computer's apps like a person would, in the background where you can: \
@@ -61,31 +64,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         }
         anyhow::Ok(())
     });
-    let (name, instructions, available_tools) = match server {
-        Server::Connectors => {
-            ("codync-connectors", crate::market::requests::INSTRUCTIONS, crate::market::requests::tools())
-        }
-        // Listed by the host: they depend on this computer's driver.
-        Server::Computer => ("codync-computer", INSTRUCTIONS, Value::Null),
-        Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS, crate::routines::tools()),
-        Server::Chat => {
-            let mut tools = crate::chat::outbox::tools();
-            if let Some(list) = tools.as_array_mut() {
-                list.extend(crate::chat::artifacts::tools());
-                list.extend(crate::chat::profile::tools());
-                list.extend(crate::chat::fallbacks::tools());
-                list.push(crate::chat::reactions::tool());
-                list.push(crate::chat::skills::tool());
-            }
-            ("codync-chat", crate::chat::outbox::INSTRUCTIONS, tools)
-        }
-        Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS, crate::chat::team::tools()),
-        Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS, crate::chat::manage::tools()),
-        Server::Memory => ("codync-memory", crate::chat::memory::INSTRUCTIONS, crate::chat::memory::tools()),
-        Server::Composio => {
-            ("codync-composio", crate::market::composio::INSTRUCTIONS, crate::market::composio::tools())
-        }
-    };
+    let (name, instructions, available_tools) = describe(server);
     // Requests still running, by id: a cancelled one stops, and its host call with it (a team change's card expires).
     let mut running = std::collections::HashMap::<String, tokio::task::AbortHandle>::new();
     while let Some(line) = lines.next_line().await? {
@@ -130,6 +109,38 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     Ok(())
 }
 
+/// A server's name, the instructions the agent reads, and its tools (`Null` for the `computer` ones, which the host
+/// lists: they depend on this computer's driver).
+pub(crate) fn describe(server: Server) -> (&'static str, &'static str, Value) {
+    match server {
+        Server::Connectors => {
+            ("codync-connectors", crate::market::requests::INSTRUCTIONS, crate::market::requests::tools())
+        }
+        Server::Computer => ("codync-computer", INSTRUCTIONS, Value::Null),
+        Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS, crate::routines::tools()),
+        Server::Chat => {
+            let mut tools = crate::chat::outbox::tools();
+            if let Some(list) = tools.as_array_mut() {
+                list.extend(crate::chat::artifacts::tools());
+                list.extend(crate::chat::profile::tools());
+                list.extend(crate::chat::fallbacks::tools());
+                list.push(crate::chat::reactions::tool());
+                list.push(crate::chat::skills::tool());
+            }
+            ("codync-chat", crate::chat::outbox::INSTRUCTIONS, tools)
+        }
+        Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS, crate::chat::team::tools()),
+        Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS, crate::chat::manage::tools()),
+        Server::Memory => ("codync-memory", crate::chat::memory::INSTRUCTIONS, crate::chat::memory::tools()),
+        Server::Composio => {
+            ("codync-composio", crate::market::composio::INSTRUCTIONS, crate::market::composio::tools())
+        }
+        Server::Network => {
+            ("codync-network", crate::chat::team::assistant::INSTRUCTIONS, crate::chat::team::assistant::tools())
+        }
+    }
+}
+
 /// The `computer` tools the host offers; none when it can't be reached.
 async fn computer_tools(port: u16, token: &str) -> Value {
     let res = crate::http()
@@ -146,7 +157,7 @@ async fn computer_tools(port: u16, token: &str) -> Value {
 }
 
 /// One tool call through the host. Failures are tool errors the agent can read, not protocol errors.
-async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server) -> Value {
+pub(crate) async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server) -> Value {
     let body = json!({
         "botId": bot,
         "name": params["name"],
@@ -155,12 +166,14 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
     let (method, timeout) = match server {
         Server::Connectors => ("connectorCall", Duration::from_secs(90)),
         Server::Routines => ("routineCall", Duration::from_secs(30)),
-        Server::Computer => ("computerCall", Duration::from_secs(60)),
+        Server::Computer => ("computerCall", Duration::from_mins(1)),
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
         Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
-        Server::Memory => ("memoryCall", Duration::from_secs(120)),
-        Server::Composio => ("composioCall", Duration::from_secs(120)),
+        Server::Memory => ("memoryCall", Duration::from_mins(2)),
+        Server::Composio => ("composioCall", Duration::from_mins(2)),
+        // The first listing may wait for the other computers.
+        Server::Network => ("agentCall", Duration::from_secs(30)),
     };
     let res = crate::http()
         .post(format!("http://127.0.0.1:{port}/api/{method}"))
@@ -182,6 +195,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
                         | Server::Manage
                         | Server::Memory
                         | Server::Routines
+                        | Server::Network
                         | Server::Connectors => {
                             json!({"content": [{"type": "text", "text": v.to_string()}]})
                         }

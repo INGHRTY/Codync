@@ -5,10 +5,11 @@ use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
+use crate::chat::uploads;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{EntryKind, Lane, now_ms};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use serde_json::json;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -24,8 +25,9 @@ impl Actor {
     }
 
     /// The prompt for `text` in session `sid`: what the agent should hear first (its profile, a handoff, a memory
-    /// change) and after (a profile update, how to share files).
-    async fn compose(&mut self, sid: &str, text: &str) -> Result<String> {
+    /// change) and after (a profile update, how to share files). A gateway turn's instructions travel beside the
+    /// message as its system prompt, so they come back with the prompt.
+    async fn compose(&mut self, sid: &str, text: &str) -> Result<(String, String)> {
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         let mut snapshot = self.snapshot(sid).await?;
         // Sessions whose frozen instructions predate send_file or artifacts hear about them each turn.
@@ -38,7 +40,7 @@ impl Actor {
         }
         // A compaction may have dropped the profile the session's first message carried.
         let resend = instructions == Instructions::FirstMessage && self.profile_resend.remove(sid);
-        if self.session_fresh || resend {
+        if snapshot.unprompted || resend {
             // The instructions reaching the agent now hold memory as it was when they were rendered.
             memory::opened(&self.hub.store, &self.cfg.id, sid, &snapshot.memory)?;
         }
@@ -46,13 +48,21 @@ impl Actor {
             prompt = format!("{notice}\n\n{prompt}");
             self.turn_memory_revision = revision;
         }
-        if std::mem::take(&mut self.session_fresh) && instructions == Instructions::FirstMessage {
+        // A prompt that failed may never have reached the agent: the instructions stay owed until one succeeds.
+        self.session_fresh = false;
+        if snapshot.unprompted {
+            self.first_prompt = Some(snapshot.clone());
+        }
+        if snapshot.unprompted && instructions == Instructions::FirstMessage {
             prompt = format!("<bot-profile>\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         } else if resend {
             context::mark_announced(&self.hub.store, &self.cfg.id, &snapshot, snapshot.system_identity.clone())?;
             snapshot.announced = snapshot.system_identity.clone();
             prompt = format!("<bot-profile>\n{PROFILE_AGAIN}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         }
+        // A gateway has no session-level system prompt: its turn carries the instructions itself.
+        let system =
+            if self.conn.as_ref().is_some_and(Conn::is_gateway) { snapshot.system.clone() } else { String::new() };
         if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
@@ -64,7 +74,7 @@ impl Actor {
         if remind_artifacts && own_chat {
             prompt.push_str("\n\n[Codync: for a report, plan, tracker or dashboard the user will come back to, write one self-contained HTML file and publish_artifact(path, title) instead of a long message. To change it, edit a copy of its HTML (list_artifacts) and publish_artifact(path, artifact: its id).]");
         }
-        Ok(prompt)
+        Ok((prompt, system))
     }
 
     /// Starts a turn in `lane` for the given user entries (none for a hidden turn).
@@ -105,11 +115,11 @@ impl Actor {
         self.turn_text = from_user.then(|| text.to_owned());
         self.turn_entries = if from_user { entry_ids.to_vec() } else { Vec::new() };
         // A room turn answers the user's message in the room; another turn, the messages it was given.
-        let answered = self.active_group.as_ref().map_or(self.turn_entries.as_slice(), |g| g.answers.as_slice());
         let opens = self.prompt_call.take().filter(|call| crate::chat::calls::is_live(&self.hub.store, call));
-        self.turn_call = crate::chat::calls::of_turn(&self.hub.store, answered).or(opens);
+        self.turn_call = crate::chat::calls::of_turn(&self.hub.store, self.answered()).or(opens);
         self.turn_memory_revision.clear();
         self.announce = None;
+        self.first_prompt = None;
         self.stop_requested = false;
         self.cancel_deadline = None;
         let team_turn = if self.active_request.is_some() {
@@ -161,13 +171,7 @@ impl Actor {
         let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
         let _ = tokio::task::spawn_blocking(move || memory::files::scan(&hub, &cfg)).await;
         let slot = self.slot();
-        if let Some(deadline) = self.routine_deadline {
-            tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), self.ensure_session(slot.as_deref()))
-                .await
-                .context("routine session setup timed out")??;
-        } else {
-            self.ensure_session(slot.as_deref()).await?;
-        }
+        self.ensure_turn_session(slot.as_deref()).await?;
         if !hidden {
             self.carry_in();
         }
@@ -206,21 +210,35 @@ impl Actor {
             tokio::time::sleep(Duration::from_millis(400)).await;
         }
         if let Some(conn) = self.conn.as_mut() {
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
+            while let Some(Incoming::Request { id, .. }) = conn.try_recv() {
+                let _ = conn.respond_error(id, -32601, "not supported").await;
             }
         }
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
-        let prompt =
-            if std::mem::take(&mut self.raw_prompt) { text.to_owned() } else { self.compose(&sid, text).await? };
+        let (prompt, system) = if std::mem::take(&mut self.raw_prompt) {
+            (text.to_owned(), String::new())
+        } else {
+            self.compose(&sid, text).await?
+        };
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
-        let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
-        let params = json!({
+        // A gateway's agent can't open this computer's files: the message's images travel in the turn itself,
+        // and the prompt names the ones the turn can't carry.
+        let gateway = self.conn.as_ref().is_some_and(Conn::is_gateway);
+        let (images, uncarried) = if gateway { self.turn_images().await } else { Default::default() };
+        let mut params = json!({
             "sessionId": sid,
-            "prompt": [{"type": "text", "text": prompt}],
+            "prompt": [{"type": "text", "text": format!("{prompt}{}", uploads::remote_suffix(&uncarried))}],
         });
+        if gateway && let Some(parts) = params["prompt"].as_array_mut() {
+            parts.extend(images);
+        }
+        if !system.is_empty() {
+            // Hermes' `system_message` field, which every turn of a gateway bot carries.
+            params["instructions"] = system.into();
+        }
+        if let Some(model) = self.cfg.model.as_deref().filter(|_| self.cfg.connection.is_some()) {
+            params["model"] = model.into();
+        }
         if let Some(id) = &self.active_routine {
             self.hub.routines.mark_started(&self.hub.store, id)?;
             self.set_inflight(true);
@@ -228,7 +246,8 @@ impl Actor {
         // From here what changes in its memory folders is the bot's, however it changed them.
         memory::turns::begin_turn(&self.cfg.id, &sid, self.hub.runtime(&self.cfg.id).message);
         // Written before this returns, so a Stop right after is sent after the prompt.
-        let answer = acp.send("session/prompt", params).await?;
+        let answer =
+            self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?.send("session/prompt", params).await?;
         if !self.turn_memory_revision.is_empty()
             && let Err(error) = memory::mark_announced(&self.hub.store, &self.cfg.id, &sid, &self.turn_memory_revision)
         {
@@ -236,7 +255,7 @@ impl Actor {
         }
         let done_tx = done_tx.clone();
         tokio::spawn(async move {
-            let _ = done_tx.send(answer.response().await);
+            let _ = done_tx.send(answer.response().await.and_then(acp::codebuddy::prompt_result));
         });
         Ok(())
     }
@@ -358,6 +377,11 @@ impl Actor {
             && let Err(error) = context::mark_announced(&self.hub.store, &self.cfg.id, &snapshot, identity)
         {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the profile update");
+        }
+        if let (Ok(_), Some(sent)) = (&done, self.first_prompt.take())
+            && let Err(error) = context::mark_prompted(&self.hub.store, &self.cfg.id, &sent)
+        {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the delivered instructions");
         }
         if let (Some(user), Some(agent), "end_turn") = (self.turn_text.take(), &final_text, stop_reason.as_str()) {
             let turn = crate::chat::naming::Turn { user, agent: agent.clone() };

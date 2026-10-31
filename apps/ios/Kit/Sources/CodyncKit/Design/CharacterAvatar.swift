@@ -328,7 +328,7 @@ public struct AvatarWithStatus: View {
         Group {
             if bot.isGroup { GroupAvatar(members: members, size: size) } else { CharacterAvatar(bot: bot, size: size) }
         }
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: bot.lead ? .topTrailing : .bottomTrailing) {
                 if bot.needsInput {
                     Image(systemName: "exclamationmark")
                         .font(.system(size: size * 0.2, weight: .black))
@@ -341,6 +341,21 @@ public struct AvatarWithStatus: View {
                         .fill(Palette.accentFill)
                         .frame(width: size * 0.28, height: size * 0.28)
                         .overlay(Circle().stroke(Palette.background, lineWidth: 2))
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if bot.lead { LeadAgentBadge(size: max(12, size * 0.34)) }
+            }
+            // A cloud bot runs on a gateway, not here: the marker sits opposite the lead star.
+            .overlay(alignment: .topLeading) {
+                if bot.connection != nil {
+                    Image(systemName: "cloud")
+                        .font(.system(size: size * 0.22, weight: .semibold))
+                        .foregroundStyle(Palette.text)
+                        .frame(width: max(12, size * 0.34), height: max(12, size * 0.34))
+                        .background(Palette.background, in: Circle())
+                        .overlay(Circle().stroke(Palette.background, lineWidth: 2))
+                        .accessibilityLabel(L10n.tr("Runs on a Hermes gateway"))
                 }
             }
     }

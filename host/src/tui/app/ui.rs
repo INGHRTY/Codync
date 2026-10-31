@@ -4,9 +4,10 @@ use ratatui::layout::Rect;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+use super::super::manage::hermes::HermesSheet;
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Library, Market, MemorySheet, RoutineForm, RoutineList,
-    SkillSheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Library, Market, MemorySheet, NetworkSheet, RoutineForm,
+    RoutineList, SkillSheet,
 };
 use super::{Editor, Mark};
 
@@ -55,17 +56,19 @@ pub enum Action {
     Library,
     RefreshAgents,
     Pair,
+    Network,
     Usage,
     CheckUpdate,
     Analytics,
     AboutAnalytics,
+    Hermes,
     Language,
     ThinkingDetails,
     Keys,
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 18] = [
+pub const ACTIONS: [(&str, &str, Action); 20] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -74,6 +77,8 @@ pub const ACTIONS: [(&str, &str, Action); 18] = [
     ("Library of this bot: artifacts and files…", "L", Action::Library),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Pair a phone…", "P", Action::Pair),
+    ("Network: your other computers…", "N", Action::Network),
+    ("Hermes connections: your VPS gateways…", "H", Action::Hermes),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
@@ -159,6 +164,10 @@ pub enum Field {
     Name,
     Instructions,
     Agent,
+    /// This computer's own agent, or Hermes on a gateway (the user's VPS).
+    RunOn,
+    /// A cloud bot's Hermes profile: its own name, or the host's from its id.
+    Profile,
     Model,
     ModelOptions,
     Fast,
@@ -169,16 +178,20 @@ pub enum Field {
     Notify,
     Computer,
     Team,
+    Network,
+    Assistants,
     Color,
     Shape,
     Connectors,
     Skills,
 }
 
-pub const FIELDS: [Field; 17] = [
+pub const FIELDS: [Field; 21] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
+    Field::RunOn,
+    Field::Profile,
     Field::Model,
     Field::ModelOptions,
     Field::Fast,
@@ -189,6 +202,8 @@ pub const FIELDS: [Field; 17] = [
     Field::Notify,
     Field::Computer,
     Field::Team,
+    Field::Network,
+    Field::Assistants,
     Field::Color,
     Field::Shape,
     Field::Connectors,
@@ -207,6 +222,10 @@ pub struct Form {
     pub name: Editor,
     pub instructions: Editor,
     pub backend: String,
+    /// The Hermes gateway it runs on; `None`: this computer's own agent.
+    pub connection: Option<String>,
+    /// Its Hermes profile; empty: the host names one from its id.
+    pub profile: Editor,
     pub model: Editor,
     /// Model settings (effort, fast…) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),
@@ -220,6 +239,9 @@ pub struct Form {
     pub computer: bool,
     /// `None`: the host has no Manage the team.
     pub manage_team: Option<bool>,
+    /// `None`: the host has no per-bot network switches.
+    pub offered_to_network: Option<bool>,
+    pub reachable_by_assistants: Option<bool>,
     pub color: usize,
     pub shape: usize,
     pub connectors: Vec<Toggle>,
@@ -236,6 +258,33 @@ pub struct Form {
 impl Form {
     pub fn current(&self) -> Field {
         FIELDS[self.field]
+    }
+
+    /// A cloud bot has no local process: no agent here, no Fast mode, no fallbacks, no folder of this computer,
+    /// and it runs as Hermes there, in its own profile.
+    pub fn cloud(&self) -> bool {
+        self.connection.is_some()
+    }
+
+    /// Whether a field is on this form: Profile only for a cloud bot, the rest only for a local one.
+    pub fn shows(&self, field: Field) -> bool {
+        match field {
+            Field::Profile => self.cloud(),
+            Field::Agent | Field::Fast | Field::Fallbacks | Field::ModelOptions | Field::Folder => !self.cloud(),
+            _ => true,
+        }
+    }
+
+    /// The field `by` shown fields after (or before) this one, wrapping.
+    pub fn step(&mut self, by: isize) {
+        let mut i = self.field;
+        for _ in 0..FIELDS.len() {
+            i = super::cycle(i, by, FIELDS.len());
+            if self.shows(FIELDS[i]) {
+                break;
+            }
+        }
+        self.field = i;
     }
 
     /// The settings picked for the model now in the field; another model has none yet.
@@ -296,12 +345,14 @@ pub enum PairCode {
 pub enum Overlay {
     Goto(Goto),
     Help(Editor),
+    LeadAgent(usize),
     Confirm(Confirm),
     NewBot(NewBot),
     Folder(FolderPicker),
     Form(Box<Form>),
     Group(GroupForm),
-    Usage,
+    /// How far its list is scrolled.
+    Usage(usize),
     Pair(PairCode),
     Memory(MemorySheet),
     /// A read-only conversation between two bots.
@@ -314,6 +365,9 @@ pub enum Overlay {
     Fields(Box<Fields>),
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
+    Network(Box<NetworkSheet>),
+    /// The Hermes gateways on the user's other computers (`manage::hermes`).
+    Hermes(Box<HermesSheet>),
 }
 
 pub struct Toast {
@@ -324,6 +378,7 @@ pub struct Toast {
 
 #[derive(Clone)]
 pub enum Click {
+    LeadAgent,
     Bot(String),
     Option {
         entry: String,
@@ -333,6 +388,8 @@ pub enum Click {
     Composer,
     /// The working line: unfolds or folds the turn's steps.
     Steps,
+    /// The plan tray above the composer: folds or unfolds the running turn's plan.
+    Plan,
     /// A bot-message row (entry id): opens the conversation.
     BotChat(String),
 }

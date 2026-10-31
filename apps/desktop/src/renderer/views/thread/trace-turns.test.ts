@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { runningTurn, scrolledToEnd, traceTurns, workingSteps } from './trace-turns.ts'
+import { runningPlan, runningTurn, scrolledToEnd, traceTurns, workingSteps } from './trace-turns.ts'
 import type { Entry, EntryData } from '../../../shared/models.ts'
 
 const entry = (id: string, turn: number, kind = 'agent', status?: string, data: EntryData = {}): Entry => ({
@@ -35,6 +35,15 @@ test('the running turn is the newest one, not a queued message waiting for the n
   const entries = [entry('u1', 1, 'user'), entry('t1', 1, 'thought'), entry('q', 2, 'user', 'queued')]
   assert.equal(runningTurn(entries, true), 1)
   assert.equal(runningTurn(entries, false), undefined)
+})
+
+test('the running plan is the working turn’s plan, and nothing once the bot stops', () => {
+  const plan = entry('plan', 2, 'plan', undefined, { entries: [{ content: 'Read the code', status: 'completed' }, { content: 'Fix it', status: 'in_progress' }] })
+  const entries = [entry('plan1', 1, 'plan', undefined, { entries: [{ content: 'Old', status: 'completed' }] }), entry('u2', 2, 'user'), plan]
+  assert.deepEqual(runningPlan(entries), { turn: 2, steps: plan.data.entries })
+  // A plan with no steps draws nothing, and a turn that made no plan draws nothing.
+  assert.equal(runningPlan([entry('plan', 2, 'plan')]), undefined)
+  assert.equal(runningPlan([entry('plan', 1, 'plan', undefined, { entries: [{ content: 'Done', status: 'completed' }] }), entry('u2', 2, 'user')]), undefined)
 })
 
 test('the trace follows new steps only while scrolled to the end', () => {

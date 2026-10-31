@@ -9,9 +9,13 @@ mod agent;
 mod analytics;
 mod bot_chat;
 mod fields;
+pub mod hermes;
 mod library;
 mod market;
 mod memory;
+mod network;
+mod network_rules;
+mod network_setup;
 mod pages;
 mod replies;
 mod routines;
@@ -22,6 +26,9 @@ pub use analytics::AnalyticsSheet;
 pub use fields::handoff_fields;
 pub use library::{ArtifactTitles, LibraryItem};
 pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
+pub use network::{NetReply, NetworkSheet, Recovery, Step};
+pub use network_rules::{RuleField, RuleForm};
+pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
 pub use skill::SkillSheet;
 pub use when::complete_zone;
@@ -56,8 +63,10 @@ pub enum Reply {
     },
     /// A voice call's own messages, by call id.
     CallEntries(String),
+    /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
     Registry {
-        more: bool,
+        search: String,
+        cursor: Option<String>,
     },
     Skills,
     /// A skill's instructions, for the details sheet with that id.
@@ -67,6 +76,12 @@ pub enum Reply {
     FieldsSaved,
     SignIn,
     Models(String),
+    /// The gateways list (`hermes`).
+    Connections,
+    GatewaySaved,
+    /// `testConnection`: the profile it checked and its models.
+    GatewayTested,
+    GatewayRemoved,
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
@@ -150,7 +165,6 @@ pub enum Row<'a> {
     Installed(&'a Value),
     Custom,
     Registry(&'a Value),
-    More,
     OwnSkill(&'a Value),
     Skill(&'a Value),
 }
@@ -326,7 +340,7 @@ impl App {
     pub(super) fn cycle_model(&self, backend: &str, current: &str, d: isize) -> Option<String> {
         let list = self.models.get(backend)?.as_ref()?;
         let mut ids = vec![String::new()];
-        ids.extend(list.iter().map(|m| m.id.clone()));
+        ids.extend(list.iter().filter(|m| !m.id.is_empty()).map(|m| m.id.clone()));
         let i = ids.iter().position(|x| x == current).unwrap_or(0);
         Some(ids[super::app::cycle(i, d, ids.len())].clone())
     }
@@ -341,17 +355,5 @@ impl App {
 /// Opens `url` in this computer's browser, when the host is this computer.
 pub(super) fn open_browser(url: &str, host: &str) -> bool {
     let local = ["//127.0.0.1", "//localhost", "//[::1]"].iter().any(|h| host.contains(h));
-    local && !url.is_empty() && open_here(std::ffi::OsStr::new(url))
-}
-
-/// Opens a link or file with this computer's default app for it (a web page: the browser).
-pub(in crate::tui) fn open_here(target: &std::ffi::OsStr) -> bool {
-    let mut command = if cfg!(windows) {
-        let mut c = std::process::Command::new("rundll32");
-        c.arg("url.dll,FileProtocolHandler");
-        c
-    } else {
-        std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
-    };
-    command.arg(target).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().is_ok()
+    local && !url.is_empty() && crate::shell::open(std::ffi::OsStr::new(url))
 }

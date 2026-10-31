@@ -75,6 +75,8 @@ pub fn events_stream(
         "rev": hub.store.current_rev(),
         "usage": hub.usage.locked().clone(),
         "screen": hub.screen.state(),
+        // Live state like the two above: a `network` event sent before this stream began is in it.
+        "network": crate::network::status(hub),
     });
     catch_up.insert(0, hello);
     // What the voice of a call this device holds should have heard while it was away.

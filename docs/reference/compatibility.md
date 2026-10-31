@@ -32,8 +32,8 @@ reason to lock someone out.
 |---|---|---|
 | Notice | `UpdateNeededCard` above the computer's bots and in place of the composer; status reads *Needs update* | *needs update* in the status line, with the reason |
 | Update this app | iPhone: App Store page. Desktop: electron-updater check (`apps/desktop/src/main/updates.ts`). Android: text only | Text only |
-| Update the host | Desktop: its own host is reinstalled (**Restart host**). iPhone and Android: instructions for that computer | `^k` → Check for updates |
-| Sync while mismatched | Stopped; `hello` is asked again every 30 s and on every reconnect | Continues; sending is blocked |
+| Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards in Settings > Computers | `^k` → Check for updates |
+| Sync while mismatched | Stopped; `hello` is asked again every 30 s (5 s while an update asked from here runs) and on every reconnect | Continues; sending is blocked |
 
 Drafts are kept while sending is blocked. A host update restarts the host, so the reconnect
 reads the new `hello` and the notice goes away on its own.
@@ -163,6 +163,11 @@ on `~/.codync` or 19222:
    `SIMCTL_CHILD_CODYNC_PAIR_URL=<pairingUrl>`.
 4. Swap hosts on the same `CODYNC_HOME` (patched ↔ normal) to see the notice appear in the
    list and in place of an open chat's composer, and go away after the reconnect.
+
+A Debug host is a development build, so its `hello.canUpdate` is false and the notice gives
+instructions. To see **Update now** too, also patch `installable()` in `host/src/update/mod.rs`
+to return `true` and `request_install` to return `Ok(())` (or an `Err` with a message, for the
+failure note); restarting the scratch host unpatched then plays the update finishing.
 
 The simulator has no App Store app, so *Update Codync* ends in a Safari error there; on a
 device it opens the App Store.

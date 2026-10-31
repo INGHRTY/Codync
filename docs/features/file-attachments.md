@@ -18,7 +18,10 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
   `~/.codync/bots/<bot>/uploads/<uploadId>/<name>`. Only UUID ids and plain file names are accepted.
 - The agent gets the message text plus an "Attached files" list of absolute paths and reads them with
   its own tools (Claude and Codex read images too). The entry keeps `attachments: [{id, name, size}]`
-  for display.
+  for display. A bot on a Hermes gateway can't open this computer's files: its message carries the
+  images that fit (PNG, JPEG, GIF, WebP, up to 6 MiB per turn) as `image_url` data URLs — in its own
+  chat and in a room — and every other file, including an image over that budget, is only named,
+  which the bot is told it can't read.
 - Files don't go through the relay mailbox: while the computer is offline, a message with files
   waits in the composer's send button (disabled) instead. A failed send keeps its files on the device
   for Resend until the app quits.
@@ -67,6 +70,12 @@ the action; cancel stops further reads, discards late responses and removes part
 files. Retry starts from zero. Account/computer retirement cancels its transfers.
 Downloads use bounded memory and check size and SHA-256 before save/export.
 
-This feature adds no previews, inline viewers, folder packaging, background transfers,
-persistent resume, Android or Watch UI. Existing bots do not publish workspace files
+An image file (by extension) up to 20 MB also shows inline above its card on iPhone,
+Android and desktop, tap/click for full size. For it the client reads the whole file
+into memory through the same `readFile` chunks, checks size and SHA-256, and keeps it
+in the sent-attachment cache under its file id; a failed read leaves the placeholder.
+The terminal UI shows only the card.
+
+This feature adds no previews of other file types, folder packaging, background
+transfers, persistent resume or Watch UI. Existing bots do not publish workspace files
 automatically: they must call `send_file`.

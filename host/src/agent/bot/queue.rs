@@ -78,6 +78,8 @@ impl Actor {
                 let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.load);
                 let restart = cfg.backend != self.cfg.backend
+                    || cfg.connection != self.cfg.connection
+                    || cfg.hermes_profile != self.cfg.hermes_profile
                     || cfg.command != self.cfg.command
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
@@ -158,7 +160,7 @@ impl Actor {
             self.answer_permission(&id, None).await;
         }
         if let (Some(c), Some(sid)) = (&self.conn, &self.turn_session) {
-            let _ = c.acp.notify("session/cancel", json!({"sessionId": sid})).await;
+            let _ = c.notify("session/cancel", json!({"sessionId": sid})).await;
         }
     }
 
@@ -166,7 +168,7 @@ impl Actor {
     async fn restart_agent(&mut self) {
         self.files.cancel();
         if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
+            c.kill().await;
         }
         for slot in self.run_slots() {
             self.set_session(Some(&slot), None);
@@ -337,13 +339,21 @@ impl Actor {
 
     /// When `e` asks for signing in: marks the harness signed out and puts a sign-in card in the
     /// chat, which sends this turn's messages again once the user has signed in. Whether it did.
-    pub(super) fn invite_sign_in(&self, e: &anyhow::Error) -> bool {
-        let backend = &self.cfg.backend;
-        if crate::agent::backends::harness(backend).is_none() || !crate::agent::acp::needs_sign_in(e) {
+    pub(super) fn invite_sign_in(&mut self, e: &anyhow::Error) -> bool {
+        let backend = self.cfg.backend.clone();
+        if crate::agent::backends::harness(&backend).is_none() || !crate::agent::acp::needs_sign_in(e) {
             return false;
         }
-        crate::agent::backends::set_signed_in(backend, Some(false));
-        self.sign_in_card(backend, self.held_for_sign_in())
+        let held = self.held_for_sign_in().to_vec();
+        crate::agent::backends::set_signed_in(&backend, Some(false));
+        // WorkBuddy can still report an account after this, which is not a working login.
+        // Other agents' own checks are left alone, so a terminal or saved keys can sign them in.
+        // WorkBuddy's current process was opened before that, so drop it.
+        crate::agent::backends::note_prompt_refused(&backend);
+        if !crate::agent::backends::session_proves_sign_in(&backend) {
+            self.restart_after_turn = true;
+        }
+        self.sign_in_card(&backend, &held)
     }
 
     /// Agent `backend`'s sign-in card in the chat, holding `entries`. Whether it's there.

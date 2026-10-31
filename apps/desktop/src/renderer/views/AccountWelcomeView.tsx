@@ -152,7 +152,7 @@ function WelcomeChatGlimpse({ shown }: { shown: boolean }) {
   return (
     <VStack gap={10}>
       <HStack align="stretch" justify="flex-end" style={rise}>
-        <Text size="subheadline" tone="text" className="welcome-bubble user">{tr(`Fix the flaky login test`)}</Text>
+        <Text size="subheadline" className="welcome-bubble user">{tr(`Fix the flaky login test`)}</Text>
       </HStack>
       <HStack align="flex-end" gap={8} style={rise}>
         <CharacterAvatar shape="blob" color="blue" size={28} mood={replied ? 'idle' : 'working'} />

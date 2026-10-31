@@ -1,5 +1,6 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
+import type { Connection } from './connections'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -52,12 +53,20 @@ export interface Bot {
   computer: boolean
   /** The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools); null from an older host. */
   manageTeam: boolean | null
+  /** Other computers in the user's networks list this bot and may message it; null from an older host. */
+  offeredToNetwork: boolean | null
+  /** The user's cloud assistant lists this bot and may message it; null from an older host. */
+  reachableByAssistants: boolean | null
   /** The bot that created this one; null when the user did. */
   createdBy: string | null
   /** Uses the memory all the user's bots share ("About you"). */
   sharedMemory: boolean
   /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
   harnessMemory: boolean | null
+  /** A Hermes gateway on another computer this bot runs on; null/absent = an agent here. */
+  connection?: string | null
+  /** The Hermes profile this bot runs as, on either side; null = the host picks one from its id. */
+  hermesProfile?: string | null
   /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
   harnessMemoryShared: boolean
   /** Moves whenever memory changes, so an open memory screen fetches it again. */
@@ -108,6 +117,10 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     skills: raw.skills ?? [],
     computer: raw.computer ?? false,
     manageTeam: raw.manageTeam ?? null,
+    offeredToNetwork: raw.offeredToNetwork ?? null,
+    reachableByAssistants: raw.reachableByAssistants ?? null,
+    connection: raw.connection ?? null,
+    hermesProfile: raw.hermesProfile ?? null,
     createdBy: raw.createdBy ?? null,
     sharedMemory: raw.sharedMemory ?? raw.managedWorkspace ?? false,
     harnessMemory: raw.harnessMemory ?? null,
@@ -223,6 +236,9 @@ export interface SharedFile extends Attachment { sha256: string }
 export const isImageName = (name: string) =>
   ['png', 'jpg', 'jpeg', 'heic', 'gif', 'webp', 'tiff', 'bmp'].includes(name.split('.').pop()?.toLowerCase() ?? '')
 
+/** A shared image small enough to show in the chat (the whole file is fetched for it). */
+export const showsAsImage = (file: SharedFile) => isImageName(file.name) && file.size <= 20 * 1024 * 1024
+
 export interface ConnectionRequest {
   [key: string]: unknown
 }
@@ -233,6 +249,8 @@ export interface BotMessage {
   text: string
   reply?: string
   detail?: string
+  /** The peer's name when it is on another of the user's computers (its id is `name@computer`). */
+  peerName?: string
 }
 
 /** "Earlier context was summarized": the harness's summary, when it gave one. */
@@ -374,6 +392,8 @@ export interface UsageWindow {
   percent: number
   resetsAt?: number | null
   resetsText?: string | null
+  /** A reading that isn't a share of a cap. Shown instead of the percent, and never the tightest limit. */
+  text?: string | null
 }
 
 export interface UsageProvider {
@@ -460,9 +480,15 @@ export interface Hello {
   signKey?: string
   boxKey?: string
   minApp?: string
+  /** `installHostUpdate` can update this computer (absent before hosts could be updated from a client). */
+  canUpdate?: boolean
+  /** The latest release the computer found; null while unknown (development builds, Homebrew, Windows; absent from older hosts). */
+  latestVersion?: string | null
   cloud?: string | null
   /** Product analytics on this computer: on unless its owner turned it off. */
   analytics?: boolean
+  /** Hermes gateways on the user's other computers (names and addresses, never keys); absent from older hosts. */
+  connections?: Connection[] | null
 }
 
 export interface PairingInfo {
@@ -522,11 +548,17 @@ export type AccountApproval = 'code' | 'auto'
 export interface CloudStatus {
   enabled: boolean
   url?: string | null
+  /** A private relay's registration token is saved (the token itself never leaves the host). */
+  tokenSet?: boolean | null
   registered?: boolean | null
   connected?: boolean | null
   owner?: CloudOwner | null
   lastError?: string | null
   approval?: AccountApproval | null
+  /** Whose relay: a `private` one has no account, access requests or relayed screen. Absent from older hosts (always Codync's). */
+  relay?: 'codync' | 'private' | null
+  /** The user's cloud assistant may message this computer's bots (`setAssistants`). */
+  assistants?: boolean | null
 }
 
 export interface ClaimSignature {
@@ -575,8 +607,14 @@ export interface BotDraft {
   skills?: string[]
   computer?: boolean
   manageTeam?: boolean
+  offeredToNetwork?: boolean
+  reachableByAssistants?: boolean
   sharedMemory?: boolean
   harnessMemory?: boolean
+  /** A Hermes gateway this bot runs on (a connection id); null/absent = an agent on this computer. */
+  connection?: string | null
+  /** The profile it runs as there; null = the host names one from its id. */
+  hermesProfile?: string | null
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -602,6 +640,10 @@ export function draftOf(bot: Bot): BotDraft {
     skills: bot.skills,
     computer: bot.computer,
     manageTeam: bot.manageTeam ?? undefined,
+    offeredToNetwork: bot.offeredToNetwork ?? undefined,
+    reachableByAssistants: bot.reachableByAssistants ?? undefined,
+    connection: bot.connection ?? null,
+    hermesProfile: bot.hermesProfile ?? null,
   }
 }
 

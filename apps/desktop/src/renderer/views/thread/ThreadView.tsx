@@ -7,6 +7,7 @@ import { Sheet, usePresence } from '../../components/Overlay'
 import { HStack, IconSlot, Spacer } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { prefs, usePref } from '../../lib/prefs'
+import { connectedThrough } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
@@ -19,10 +20,11 @@ import { ChatRow, TimeSeparator } from './ChatRows'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
+import { PlanTray } from './PlanTray'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
 import { TraceView } from './TraceView'
-import { workingSteps } from './trace-turns'
+import { runningPlan, workingSteps } from './trace-turns'
 import { useReading } from './reading'
 import { GroupEditorView } from '../bots/GroupEditorView'
 import { BotTemplateView } from '../bots/BotTemplateView'
@@ -35,7 +37,7 @@ import './thread.css'
 import './composer.css'
 import './chat-controls.css'
 
-const WIDE = 680
+const WIDE = 740
 
 /**
  * One endless conversation with a bot or a group chat. Only deliberate messages show here; tool
@@ -97,9 +99,9 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   }, [])
 
   const panelOpen = wide && showSettings
-  squeezeBelow.current = panelOpen ? detailsWidth : 0
+  squeezeBelow.current = panelOpen ? Math.max(360, detailsWidth) : 0
   // The side panel's edge drags its width, leaving the conversation at least 380 wide.
-  const panelWidth = (w: number) => Math.min(Math.max(260, w), width.current - 380)
+  const panelWidth = (w: number) => Math.min(Math.max(360, w), width.current - 380)
   // A compact Details presentation dismisses once the window is wide enough for the inspector.
   useEffect(() => {
     if (wide) setCompactDetails(false)
@@ -116,6 +118,11 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
       }),
     [toggleDetails],
   )
+
+  // The running turn's plan floats above the composer while the bot works.
+  const working = !!bot && isWorkingIn(bot, botId) && !store.isOffline
+  const entries = store.allEntries(botId)
+  const plan = useMemo(() => (working ? runningPlan(entries) : undefined), [working, entries])
 
   const openTrace = useCallback(() => setShowTrace(true), [])
   const openArtifact = useCallback((id: string) => {
@@ -183,6 +190,8 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
         <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
+          {/* The plan over the box the bot's answer will come from; an update card or an artifact takes its place. */}
+          {plan && !store.mismatch && !artifactId ? <PlanTray turn={plan.turn} steps={plan.steps} openTrace={openTrace} /> : null}
           {store.mismatch ? (
             <div className="composer-update-needed">
               <UpdateNeededCard />
@@ -208,14 +217,14 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
       <ChatSidePanel
         open={panelOpen}
         width={panelWidth(detailsWidth)}
-        min={260}
+        min={360}
         max={width.current - 380}
         onResize={(w) => setDetailsWidth(panelWidth(w))}
       >
         {details}
       </ChatSidePanel>
 
-      <Sheet open={compactDetails} onClose={() => setCompactDetails(false)} width={340} height={600}>
+      <Sheet open={compactDetails} onClose={() => setCompactDetails(false)} width={400} height={600}>
         {details}
       </Sheet>
       <Sheet open={botChat !== null} onClose={() => setBotChat(null)} width={620} height={560}>
@@ -247,6 +256,7 @@ function TopFade() {
 
 function ConnectionSubtitle() {
   const store = useStore()
+  const tr = useTr()
   const connecting = store.shownConnection.kind === 'connecting'
   const symbol = store.connection.kind !== 'online' ? 'wifi.slash' : store.hostRoute === 'relay' ? 'cloud' : store.hostRoute === 'direct' ? 'wifi' : store.hostRoute === 'loopback' ? 'desktopcomputer' : 'network'
   const description = (() => {
@@ -262,10 +272,11 @@ function ConnectionSubtitle() {
         return 'Not paired'
     }
     if (store.mismatch) return 'Needs update'
-    return store.hostRoute === 'relay' ? 'Connected through Cloudflare' : store.hostRoute === 'direct' ? 'Connected over Wi-Fi or Tailscale' : store.hostRoute === 'loopback' ? 'Connected locally' : 'Connected'
+    return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? 'Connected over Wi-Fi or Tailscale' : store.hostRoute === 'loopback' ? 'Connected locally' : 'Connected'
   })()
+  const spoken = tr(description)
   return (
-    <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${description}`} aria-label={`${store.hostName}, ${description}`}>
+    <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${spoken}`} aria-label={`${store.hostName}, ${spoken}`}>
       <IconSlot width={12}>{connecting ? <Spinner size={8} /> : <Icon name={symbol} size={8} weight="medium" />}</IconSlot>
       <Text size="caption" weight="medium" truncate>{store.connectionLabel}</Text>
     </HStack>

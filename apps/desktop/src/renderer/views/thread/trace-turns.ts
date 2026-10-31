@@ -1,4 +1,4 @@
-import type { Entry } from '../../../shared/models.ts'
+import type { Entry, PlanItem } from '../../../shared/models.ts'
 
 /** A bot's entries grouped by turn, oldest turn first, each turn's entries in their order. */
 export function traceTurns(entries: Entry[]): [number, Entry[]][] {
@@ -17,6 +17,14 @@ export function runningTurn(entries: Entry[], working: boolean): number | undefi
 export function workingSteps(entries: Entry[]): Entry[] {
   const turn = runningTurn(entries, true)
   return entries.filter((e) => e.turn === turn && isWorkingStep(e))
+}
+
+/** The running turn's plan, for the tray that floats above the composer: its turn and its steps. */
+export function runningPlan(entries: Entry[]): { turn: number; steps: PlanItem[] } | undefined {
+  const turn = runningTurn(entries, true)
+  if (turn === undefined) return undefined
+  const steps = entries.find((e) => e.turn === turn && e.kind === 'plan')?.data.entries ?? []
+  return steps.length ? { turn, steps } : undefined
 }
 
 /** Thinking, narration, a tool call or a plan; never the bot's bookkeeping, nor a call the host didn't flag. */

@@ -5,10 +5,13 @@ import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
 import type { CallCue } from '@shared/calls'
 
+const REFRESH_TIMEOUT = 20_000
 const DROP_GRACE = 5000
 const INITIAL_GRACE = 1000
 const ACTION_PATIENCE = 20_000
 const MISMATCH_RECHECK = 30_000
+/** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
+const UPDATE_RECHECK = 5_000
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const same = (a: Connection, b: Connection) => a.kind === b.kind && JSON.stringify(a) === JSON.stringify(b)
@@ -33,6 +36,7 @@ export class BotSync extends BotMirror {
   readonly callCues = new Map<string, (cue: CallCue) => void>()
   /** The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again. */
   private readonly heardCues = new Map<string, number>()
+  private finishRefresh: ((error?: Error) => void) | null = null
   private heldDrop: Connection | null = null
   private dropTimer: ReturnType<typeof setTimeout> | null = null
   private closeEvents: (() => void) | null = null
@@ -70,7 +74,23 @@ export class BotSync extends BotMirror {
     this.runEvents(this.client)
   }
 
+  /** Manual refresh waits for the new stream to answer, independently of the online grace period. */
+  refreshStream(): Promise<void> {
+    if (this.retired) return Promise.resolve()
+    this.restartStream()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => this.finishRefresh?.(new Error('Connection timed out')), REFRESH_TIMEOUT)
+      this.finishRefresh = (error) => {
+        clearTimeout(timer)
+        this.finishRefresh = null
+        if (error) reject(error)
+        else resolve()
+      }
+    })
+  }
+
   private stopTransport() {
+    this.finishRefresh?.()
     this.eventsLoop++
     this.closeEvents?.()
     this.closeEvents = null
@@ -121,8 +141,9 @@ export class BotSync extends BotMirror {
         await this.refreshHello(client)
         if (!alive()) return
         if (this.mismatch) {
+          this.finishRefresh?.()
           this.setConnection({ kind: 'online' })
-          await sleep(MISMATCH_RECHECK)
+          await sleep(this.hostUpdateOffer.kind === 'updating' ? UPDATE_RECHECK : MISMATCH_RECHECK)
           return void attempt()
         }
         if (this.isLoopback) {
@@ -146,6 +167,7 @@ export class BotSync extends BotMirror {
               this.setConnection({ kind: 'online' })
               backoff = 1000
               this.apply(event)
+              this.finishRefresh?.()
             },
             (error) => (error ? reject(error) : resolve()),
           )
@@ -153,6 +175,7 @@ export class BotSync extends BotMirror {
       } catch (error) {
         if (!alive()) return
         const message = error instanceof Error ? error.message : String(error)
+        this.finishRefresh?.(new Error(message))
         this.setConnection({ kind: 'offline', message })
         if (error instanceof HostError && error.status === 401) return
       }
@@ -177,6 +200,7 @@ export class BotSync extends BotMirror {
     this.hello = h
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
     if (this.isLoopback) this.updateComputer((c) => ({ ...c, name: h.name, device: h.device ?? c.device }))
+    if (h.connections) this.connections = h.connections
     this.changed()
   }
 
@@ -187,6 +211,7 @@ export class BotSync extends BotMirror {
       this.refetchAll()
       this.rewound = false
       this.unreadable = false
+      this.hostUpdate = null
     }
     this.cacheStamp = null
     this.hostVersion = next
@@ -199,6 +224,7 @@ export class BotSync extends BotMirror {
         this.hostId = event.hostId
         this.usage = event.usage
         this.screen = event.screen
+        this.network = event.network
         if (event.rev < this.rev) this.rev = 0
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
@@ -237,6 +263,12 @@ export class BotSync extends BotMirror {
         break
       case 'cloud':
         this.cloud = event.cloud
+        break
+      case 'network':
+        this.network = event.network
+        break
+      case 'connections':
+        this.connections = event.connections
         break
       case 'call': {
         const { cue } = event

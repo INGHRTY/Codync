@@ -119,6 +119,20 @@ pub struct BotConfig {
     /// (see `chat::manage`). The user turns it on; the bots such a bot creates have it too.
     #[serde(default)]
     pub manage_team: bool,
+    /// A Hermes gateway on another computer (`remote::hermes::connections`): the bot's agent runs there,
+    /// over HTTP, instead of as a process on this computer. `None`: this computer's own ACP agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<String>,
+    /// The Hermes profile this bot runs as, on either side (one profile per bot keeps memory and skills apart).
+    /// `None`: the host names one from the bot's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hermes_profile: Option<String>,
+    /// Other computers in the user's network list this bot and may message it (`network::publish`).
+    #[serde(default = "yes")]
+    pub offered_to_network: bool,
+    /// The user's cloud assistant lists this bot and may message it (`chat::team::assistant`).
+    #[serde(default = "yes")]
+    pub reachable_by_assistants: bool,
     /// The bot that created this one with `create_bot`; none when the user did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,

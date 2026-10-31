@@ -4,22 +4,9 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { encodeTemplate } from '../../lib/bot-template'
 import { useTr } from '../../lib/use-language'
 import './bots.css'
-
-/**
- * Swift's `JSONEncoder` with `.prettyPrinted, .sortedKeys, .withoutEscapingSlashes`; nil fields are left out, and so
- * are fallbacks (they depend on the agents a computer has).
- */
-export function encodeTemplate(draft: BotDraft): string {
-  const { id: _id, pinned: _pinned, hidden: _hidden, fallbacks: _fallbacks, selfFallbacks: _selfFallbacks, ...rest } = draft
-  const sorted = Object.fromEntries(
-    Object.entries(rest)
-      .filter(([, v]) => v !== null && v !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-  )
-  return JSON.stringify(sorted, null, 2).replace(/^(\s*"(?:[^"\\]|\\.)*"): /gm, '$1 : ')
-}
 
 /** A portable settings snapshot, with no conversation identity or runtime state. */
 export function BotTemplateView({ draft }: { draft: BotDraft }) {

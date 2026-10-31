@@ -27,9 +27,12 @@
   --removed: #c62828;
   /* Floating menus and account panel. */
   --panel: #fafafa;
-  /* The Mac chat's bubbles (a step stronger than the iPhone's). */
+  /* The conversation's own bubbles, apart from the chips that reuse --bubble-user. The user's own
+     messages are the only solid bubble, so the eye lands on what was said to the bot. (kit chatUser) */
   --chat-agent: #eeeeee;
-  --chat-user: #e2e2e2;
+  --chat-user: #1c1c1c;
+  --on-chat-user: #ffffff;
+  --secondary-on-chat-user: #b4b4b4;
   /* Floating transcript controls (chevrons, Jump to latest, inspector actions). */
   --chat-button: #eeeeee;
   /* Light: the message box is the page color; dark: a lighter fill. */
@@ -54,11 +57,19 @@
   --chip-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 
   /* Corner radii and shadows: one scale for every surface. */
-  --radius-xs: 6px;
-  --radius-s: 10px;
+  /* Grok Bot's scale: 4 / 8 / 12 / 16 / 18. */
+  --radius-xs: 4px;
+  --radius-s: 8px;
   --radius-m: 12px;
   --radius-l: 16px;
-  --radius-xl: 22px;
+  --radius-xl: 18px;
+  /* The spacing scale, for the chat's own geometry. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
   --radius-pill: 999px;
   --shadow-s: 0 2px 20px rgba(0, 0, 0, 0.06);
   --shadow-m: 0 4px 32px rgba(0, 0, 0, 0.12);
@@ -67,6 +78,9 @@
 
   /* The Mac text preference: conversation size / 12 pt scales the chrome too. */
   --scale: 1;
+  --chat-scale: 1;
+  /* The readable column's own base (applyTextSize replaces both with the preference). */
+  --measure-scale: 1;
   --conversation: 12px;
   /* Markdown headings and code follow the conversation's own text size. */
   --md-scale: var(--scale);
@@ -123,7 +137,9 @@
     --removed: #f0a7a7;
     --panel: #1b1b1b;
     --chat-agent: #262626;
-    --chat-user: #363636;
+    --chat-user: #f2f2f2;
+    --on-chat-user: #141414;
+    --secondary-on-chat-user: #5a5a5a;
     --chat-button: #303030;
     --composer-fill: #2f2f2f;
     --chrome-fill: #181818;

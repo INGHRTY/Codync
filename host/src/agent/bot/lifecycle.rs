@@ -11,9 +11,9 @@ use std::time::{Duration, Instant};
 
 /// Coming back costs a relaunch plus `session/load` (seconds), so ordinary pauses in a chat
 /// stay warm.
-const IDLE: Duration = Duration::from_secs(30 * 60);
+const IDLE: Duration = Duration::from_mins(30);
 /// How often an idle bot looks for something to give back.
-const CHECK_EVERY: Duration = Duration::from_secs(60);
+const CHECK_EVERY: Duration = Duration::from_mins(1);
 
 #[derive(Debug, PartialEq)]
 enum Release {
@@ -56,7 +56,7 @@ impl Actor {
             return;
         }
         let release = plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now());
-        let leader = conn.acp.pid();
+        let leader = conn.pid();
         if release == Release::Nothing || background_work(leader).await {
             return;
         }
@@ -64,7 +64,7 @@ impl Actor {
             Release::Agent => {
                 tracing::info!(bot = %self.cfg.id, "stopping an idle agent");
                 if let Some(conn) = self.conn.take() {
-                    conn.acp.kill().await;
+                    conn.kill().await;
                 }
             }
             Release::Sessions(sessions) => {
@@ -96,10 +96,10 @@ impl Actor {
             return;
         }
         let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
-        if alone && !background_work(conn.acp.pid()).await {
+        if alone && !background_work(conn.pid()).await {
             tracing::info!(bot = %self.cfg.id, "stopping the agent after its routine run");
             if let Some(conn) = self.conn.take() {
-                conn.acp.kill().await;
+                conn.kill().await;
             }
         } else {
             self.close_reloadable(sid).await;
@@ -251,10 +251,15 @@ mod tests {
         // How Codex starts an MCP server.
         let grouped = spawn("my $pid = fork; if (!$pid) { setpgrp; sleep 30; exit } sleep 30");
         let detached = spawn("use POSIX (); my $pid = fork; if (!$pid) { POSIX::setsid(); sleep 30; exit } sleep 30");
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // The children exist once perl has forked them: wait for that instead of a fixed pause,
+        // which a busy CI runner can outlast.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while !background_work(detached.id()).await {
+            assert!(tokio::time::Instant::now() < deadline, "the detached child never showed up");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         assert!(!background_work(plain.id()).await);
         assert!(!background_work(grouped.id()).await);
-        assert!(background_work(detached.id()).await);
         for child in [plain, grouped, detached] {
             if let Some(pid) = child.id() {
                 let _ = std::process::Command::new("/bin/kill").args(["-KILL", "--", &format!("-{pid}")]).status();

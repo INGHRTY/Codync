@@ -47,6 +47,8 @@ pub enum After {
     Installed,
     /// Memory, routines, marketplace, sign-in (`manage`).
     Sheet(Reply),
+    /// The network sheet's calls.
+    Network(super::super::manage::NetReply),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

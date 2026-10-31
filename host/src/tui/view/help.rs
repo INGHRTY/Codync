@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 67] = [
+const HELP: [(&str, &str, &str); 70] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -55,6 +55,7 @@ const HELP: [(&str, &str, &str); 67] = [
     ("BOTS", "n", "new bot"),
     ("BOTS", "m", "new group chat"),
     ("BOTS", "e", "settings, or edit a group"),
+    ("BOTS", "I", "About the lead agent"),
     ("BOTS", "p", "pin / unpin"),
     ("BOTS", "J K", "move bot down / up"),
     ("BOTS", "S", "new session"),
@@ -71,6 +72,8 @@ const HELP: [(&str, &str, &str); 67] = [
     ("VIEW", "b", "compact roster"),
     ("VIEW", "U", "usage"),
     ("VIEW", "P", "pair a phone"),
+    ("VIEW", "N", "network: your other computers"),
+    ("VIEW", "H", "Hermes connections: your VPS gateways"),
     ("VIEW", "^k share", "share usage analytics on / off"),
     ("VIEW", "^k about", "what usage analytics include"),
     ("VIEW", "language", "app language: follow system or choose one of eight languages"),

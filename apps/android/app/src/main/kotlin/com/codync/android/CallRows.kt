@@ -95,8 +95,8 @@ import kotlinx.serialization.json.longOrNull
     when (message.speaker) {
         CallMessage.Speaker.User -> Box(Modifier.fillMaxWidth().padding(start = 40.dp), contentAlignment = Alignment.CenterEnd) {
             SelectionContainer {
-                Text(message.text, Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser).padding(horizontal = 14.dp, vertical = 9.dp),
-                    style = Type.body, color = Palette.text)
+                Text(message.text, Modifier.clip(RoundedRectangle(18.dp)).background(Palette.chatUser).padding(horizontal = 14.dp, vertical = 9.dp),
+                    style = Type.body, color = Palette.onChatUser)
             }
         }
         CallMessage.Speaker.Voice -> SelectionContainer {

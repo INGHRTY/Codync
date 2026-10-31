@@ -4,7 +4,7 @@ Codync has two parts. The **host** (`codync-host`) is a small background service
 
 - A Mac (Apple silicon or Intel), a Windows PC (x64), or a Linux machine (x86_64 or arm64).
 - At least one coding agent on that computer, such as Claude Code or Codex. You can also install one from Codync later. See [Agents](/docs/agents).
-- Optional: an iPhone with iOS 18 or later. You can also use only the desktop app or the terminal UI.
+- Optional: an iPhone with iOS 26 or later. You can also use only the desktop app or the terminal UI.
 
 Codync is free and open source (Apache-2.0). You pay only your agent's provider, through the plan or key you already use.
 
@@ -43,6 +43,8 @@ You can also install the host with Homebrew (`brew install leepokai/codync/codyn
 
 The app first asks about an account. Signing in with Apple or Google is optional. Choose **Continue on this Mac** (or **Continue on this computer**) to go on without one. It then offers **Computer access**, which bots need only to use the screen; choose **Set up later** to skip it. See [Computer use](/docs/computer-use).
 
+Press **⌘R** on macOS or **Ctrl+R** on Windows and Linux to refresh your computers. A small spinning “Loading…” indicator appears while Codync reconnects and updates the computer list. Repeated presses wait for the current refresh to finish.
+
 ## Running only the host
 
 For a computer without the desktop app, such as a headless Mac or a server, install the host on its own:
@@ -58,7 +60,7 @@ codync-host status
 
 ## 2. Install the iPhone app
 
-Get [Codync on the App Store](https://apps.apple.com/app/codync/id6760984418). It's free and needs iOS 18 or later.
+Get [Codync on the App Store](https://apps.apple.com/app/codync/id6760984418). It's free and needs iOS 26 or later.
 
 Every iPhone release goes through Apple's App Review first, so the App Store version can trail the computer apps. Your computer waits to install an update that needs a newer iPhone app until that version is in the App Store. See [Updates](/docs/updates).
 
@@ -74,6 +76,8 @@ On the computer, show the pairing code:
 - **Terminal:** run `codync-host pair`, or press `P` in the terminal UI.
 
 On the iPhone, open Codync and tap **Get started**, then **Continue**, then scan the code. The iPhone Camera app can scan it too. If you can't scan, copy the pairing link on the computer and paste it into the field under the viewfinder. To pair later, tap the account button at the top left of the Bots tab, then **Scan a computer's code**.
+
+The iPhone app has three tabs: **Bots** (your bots and chats), **State** (widgets, Live Activities and usage limits) and **Settings** (this iPhone's own settings). Each computer's settings, such as Extensions, voice chat and push notifications, are in **Manage computers**: tap the connection status at the top of the Bots tab (such as **1 connected**).
 
 A pairing code expires. If pairing fails, show a new code on the computer and scan again.
 

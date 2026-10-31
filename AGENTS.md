@@ -7,7 +7,7 @@
 - `apps/desktop/`: desktop app for macOS, Linux and Windows (Electron, React, TypeScript): [docs/architecture/desktop-app.md](docs/architecture/desktop-app.md); how its views are styled: [docs/guides/desktop-styles.md](docs/guides/desktop-styles.md).
 - `apps/android/`: Android phone app (Kotlin, Jetpack Compose), ported from the iPhone app: `core` (models, crypto, transport), `design` (Codync's components), `app` (screens, store, widgets): [apps/android/README.md](apps/android/README.md).
 - `apps/screen-macos` and `apps/screen-linux`: Remote screen helpers.
-- `cloud/`: Cloudflare accounts, encrypted relay, Durable Objects and D1; tests live in `cloud/test/`.
+- `cloud/`: Cloudflare accounts, encrypted relay, Durable Objects and D1; tests live in `cloud/test/`. `private-relay/`: a single-process subset of that relay a person runs for their own computers (Node, `node:sqlite`), tests in `private-relay/test/`.
 - `relay/`: Cloudflare push worker and `test/`; `web/`: website (Next.js); `packaging/`: distribution templates; `docs/`: architecture and naming guidance.
 
 ## Host owns the logic
@@ -57,12 +57,12 @@ Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and
 
 ## Clean code
 
-- Keep code modular and clean on every change: reuse before writing, one responsibility per file/type, no new code appended to files past ~500 lines (split first), views/components hold no I/O or logic, short single-purpose functions, enums over flags, no dead code, no swallowed errors. Full rules: [docs/guides/clean-code.md](docs/guides/clean-code.md).
+- Keep code modular and clean on every change: reuse before writing (existing code first, then a proven component/framework that already fits, see [prefer ready-made](docs/guides/clean-code.md#modules)), one responsibility per file/type, no new code appended to files past ~500 lines (split first), views/components hold no I/O or logic, short single-purpose functions, enums over flags, no dead code, no swallowed errors. Full rules: [docs/guides/clean-code.md](docs/guides/clean-code.md).
 - After every code change (tests green, before commit): review → fix, refactor and cleanup → end-to-end test. In Codex, use the [after-change skill](.agents/skills/after-change/SKILL.md); in Claude Code, use the `after-change` workflow: [after every change](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup).
 
 ## Cross-platform UI changes
 
-- Any UI change in any client must include the corresponding updates to the other clients in the same change: iOS (`apps/ios/`, `apps/ios/Kit/Sources/CodyncUI/`), Android (`apps/android/app/`), desktop (`apps/desktop/src/renderer/`, macOS, Linux and Windows), and terminal UI (`host/src/tui/`). This applies in every direction.
+- Any UI change in any client must include the corresponding updates to the other clients in the same change: iOS (`apps/ios/`, `apps/ios/Kit/Sources/CodyncUI/`), Android (`apps/android/app/`), desktop (`apps/desktop/src/renderer/`, macOS, Linux and Windows), and terminal UI (`host/src/tui/`). This applies in every direction. The iPhone and Android apps go further: every change to either one, not only UI (behavior, flows, copy, tests, docs), lands in the other in the same change and is checked on both (iOS Simulator and Android emulator) before it merges, contributor PRs included; only Apple-only or Android-only capabilities stay on one side.
 - Keep shared features, actions, terminology, displayed information, and loading, empty, error, and permission states consistent. Adapt layout, controls, and input to each platform, including terminal keyboard interaction, while preserving the same user-facing behavior.
 - Inspect every client's corresponding implementation before finishing a UI task. Implement applicable changes together; do not silently defer another client. For a platform-only change or an unsupported capability, document which clients are unaffected and the concrete reason in the change summary.
 - Validate each affected client with its relevant build/tests and UI checks. Report any checks that could not run and why.
@@ -74,6 +74,8 @@ Use Swift Testing (`@Test`, `#expect`), Rust unit tests, `node --test` in the de
 
 ## Several agents share `dev`
 
+- Every large feature and every bug fix must use its own branch in a separate git worktree, including implementation, builds, tests and app E2E; never do that work in the shared checkout. Use the [worktree sandbox](docs/guides/dev-app.md#worktree-sandboxes) and follow the [handoff and cleanup workflow](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup).
+- After creating or selecting a task worktree, `cd` into it and show `pwd` and `git branch --show-current` so the user can see where the work is happening. Run subsequent task commands from that worktree; tools without a persistent working directory must explicitly set it on every call.
 - Several agents often work in this checkout on `dev` at once. Before touching files with someone else's uncommitted changes, or anything tree-wide (renames, `xcodegen`, version bump, `git stash`/`reset`/`checkout`), tell the other agents what you'll change if your tool can message them; otherwise ask the user first. Never discard, revert or reformat hunks that aren't yours.
 - Before starting any task, sync with origin: `git pull --rebase --autostash origin dev`, then push any finished local commits that aren't on `origin/dev` yet (`git push origin dev`). The pull is tree-wide, so the rule above applies; if the autostash conflicts, keep both sides' intent and never drop another agent's hunk.
 

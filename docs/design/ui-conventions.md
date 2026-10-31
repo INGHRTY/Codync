@@ -27,8 +27,10 @@ window's Settings has the same controls on its Updates page. One action carries 
 whole flow (`apps/desktop/src/shared/update-action.ts`, the same label in the tray, the
 Updates page and the update-needed card): **Check for updates** → **Update to <version>**
 → **Downloading… N%** (the Updates page adds a progress bar) → **Restart to update** →
-**Restarting…**. A finished download never quits the app on its own; the person restarts,
-or it installs once idle. While a release is available, a filled arrow badge sits right
+**Restarting…**. A check the person starts that finds nothing opens a **You're up to date**
+dialog in the chat window (scheduled checks stay silent). A finished download never quits the app on its own; the person restarts,
+or it installs once idle (once no bot is working, when another device chose **Update now** for
+this computer). While a release is available, a filled arrow badge sits right
 of **Extensions** in the sidebar footer (under the
 Extensions icon in the collapsed rail), its tooltip the same action label; one click
 restarts into the release, downloading it first if needed (a ring fills with the download
@@ -37,7 +39,7 @@ runs the latest version. The TUI action list has **Check for updates**. Download
 install go through electron-updater (`apps/desktop/src/main/updates.ts`); there is no
 separate update window.
 
-The tray menu is Electron's native `Menu` (`apps/desktop/src/main/tray.ts`), the only system menu in the desktop app. Its commands, submenus, checkboxes, usage-icon radio items, separators and keyboard navigation use system styling. Do not add custom cards, hover backgrounds, icon buttons or a window-style menu panel here.
+The tray menu is Electron's native `Menu` (`apps/desktop/src/main/tray.ts`), the only system menu in the desktop app. Its commands, submenus, checkboxes, usage-icon radio items, separators and keyboard navigation use system styling. Do not add custom cards, hover backgrounds, icon buttons or a window-style menu panel here. On macOS only, action rows (Open, Pair iPhone, host actions, approval review, Remote screen, Settings, Quit) carry an SF Symbol through `nativeImage.createMenuSymbol`; status, bot and usage rows get none, and Linux and Windows keep plain rows. The app version is a row in Settings → Updates, so Settings and Quit end the menu together.
 
 The menu retains host installation/restart, bot conversation/stop actions, approval review, usage limits, remote-screen permissions, open-at-login and quit. Pairing opens a separate titled window because its QR needs a persistent scanning surface. The chat window retains its own UI conventions.
 
@@ -46,7 +48,7 @@ Usage row shows no number; it opens Settings' Usage page with the same per-provi
 
 ## Account menu and Settings (desktop)
 
-The chat window's account menu copies Grok Bot's: Usage, Get Codync for mobile, Support, Settings, then the signed-in account and Sign out. Everything else is a page of **Settings**, laid out like ChatGPT's desktop settings (references in `reference/chatgpt-settings-*.png`): a sidebar of pages under small group labels (Personal: General, Voice chat, Usage; This Mac, or This computer on Linux: Computers, Updates) and a large page title over the page's sections. Manage computers and approval badges lead to the Computers page. The iPhone keeps its Computers & settings sheet. Source: `apps/desktop/src/renderer/views/settings/SettingsView.tsx`, account menu in `apps/desktop/src/renderer/views/PanelMenus.tsx`.
+The chat window's account menu copies Grok Bot's: Usage, Get Codync for mobile, Support, Settings, then the signed-in account and Sign out. Everything else is a page of **Settings**, laid out like ChatGPT's desktop settings (references in `reference/chatgpt-settings-*.png`): a sidebar of pages under small group labels (Personal: General, Voice chat, Usage; This Mac, or This computer on Linux: Computers, Updates) and a large page title over the page's sections. Manage computers and approval badges lead to the Computers page. The phone apps' Settings tab (iPhone and Android), to the right of State in the same bar, holds only what belongs to the phone itself: appearance, language, thinking details, notification permission, usage analytics and Start over. Anything that belongs to one computer lives in Computer management, the sheet Manage computers and links open: one card per computer with its name and status, then Extensions, Voice chat (its keys live on that computer), Screen, Push notifications (whether that computer alerts this phone), Connection and Codync as rows (Connection shows the route's short name, its menu the whole route; Codync shows the version the computer runs, whether it's up to date, and **Update** when a newer release is out or this app needs one), then Hidden bots, and Pair a computer in a card of its own. The desktop's Computers page shows the same Codync row on each SSH computer's card, and on this computer's on Linux (on macOS and Windows this computer's Codync is the app, on the Updates page). Source: `apps/desktop/src/renderer/views/settings/SettingsView.tsx`, account menu in `apps/desktop/src/renderer/views/PanelMenus.tsx`.
 
 ## iPhone and desktop code
 
@@ -66,7 +68,7 @@ Other custom iPhone screens use `Chrome.swift` and `Controls.swift`. The desktop
 | Modal or full-window overlay | `.codyncSheet` (system sheet), `.codyncOverlay` |
 | Header outside the native bot navigation flow | `ModalHeader`, `ScreenHeader` |
 | Icon action | `IconButton` |
-| iPhone app tabs | System `TabView` (Liquid Glass tab bar, hidden inside a chat) |
+| iPhone app tabs | System `TabView` (Liquid Glass tab bar, hidden inside a chat). Settings is the tab to the right of State. |
 | Menu / confirmation | `DropdownMenu` / `.contextActions` (system menus), `.codyncDialog` |
 | Toggle | `ToggleStyle.codync` |
 | Form-like content | `CardForm`, `CardSection` (a small bold heading over a filled, rounded group; rows split by inset hairlines; a row is `ValueRow` with an optional one-line `detail`, and its picker is an outlined `ChoicePicker`) |
@@ -184,7 +186,7 @@ moved to each computer (`ExtensionsMovedTip.tsx`); dismissing it, or opening Ext
 a heading, hides it for good on that device. Logos represent examples, not connected status.
 
 This is a desktop sidebar treatment across macOS, Linux and Windows. iOS keeps its
-native navigation and per-computer Extensions entries (each computer's row in Settings, and
+native navigation and per-computer Extensions entries (each computer's card in Computer management, and
 each computer heading in the Bots list with several computers); the TUI
 keeps its keyboard Extensions action and connector tabs. Neither has this persistent
 desktop footer or supports the same layered backdrop material; no capabilities or
@@ -210,7 +212,10 @@ follow/jump actions remain unchanged.
 Per the requested desktop reference, use the system sans font with 13-point,
 medium-weight roster names (semibold for unread), 12-point previews and chat text
 at the selected text size, without the former extra two-point offset. The default
-sidebar is 266 points; existing custom widths and font preferences are respected.
+sidebar is 180 points (it folds to a 48-point rail when the window cannot hold it
+and the chat's 424-point minimum), the conversation column is 640 points at the
+default 14-point text, and the radius scale is 4/8/12/16/18 with spacing at
+4/8/12/16/24/32; existing custom widths and font preferences are respected.
 Reference surfaces: dark canvas #070707, sidebar #111111, capsule #181818, composer
 #2f2f2f. Search/new buttons, the title pill, Extensions and composer use subtle
 one-point outlines. **These reference-matched desktop controls are an explicit

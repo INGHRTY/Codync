@@ -16,10 +16,7 @@ public struct BotRow: View {
             AvatarWithStatus(bot: bot, members: model.members(of: bot), size: avatar)
             VStack(alignment: .leading, spacing: lineSpacing) {
                 HStack(alignment: .firstTextBaseline) {
-                    if bot.lead {
-                        Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.tertiary)
-                            .accessibilityLabel(L10n.tr("Lead bot"))
-                    } else if bot.pinned {
+                    if bot.pinned && !bot.lead {
                         Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Palette.tertiary)
                     }
                     Text(bot.name)
@@ -82,7 +79,7 @@ public struct BotRow: View {
                 .foregroundStyle(Palette.danger)
                 .lineLimit(1)
         } else {
-            Text(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.managedWorkspace ? L10n.tr("Personal workspace") : bot.folderName)")))
+            Text(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.connection != nil ? L10n.tr("Hermes gateway") : bot.managedWorkspace ? L10n.tr("Personal workspace") : bot.folderName)")))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(1)

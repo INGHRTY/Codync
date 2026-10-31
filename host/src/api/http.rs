@@ -28,6 +28,8 @@ pub fn router(hub: Arc<Hub>) -> Router {
         .route("/hooks/routines/{id}", post(routine_hook))
         .route("/events", get(events))
         .route("/api/{method}", post(command))
+        // A bot's tools for an agent on another computer (a Hermes gateway's): its own token, not this computer's.
+        .route("/mcp/{bot}", post(mcp_bridge))
         .route("/term/{id}", get(term_stream))
         .route("/ingest/statusline", post(statusline))
         .route("/channel", get(channel))
@@ -62,9 +64,20 @@ impl IntoResponse for ApiError {
     }
 }
 
+#[derive(Default, Deserialize)]
+struct HealthQuery {
+    /// Sent by the desktop app's own poll: it's open to carry out an update request.
+    #[serde(default)]
+    app: bool,
+}
+
 /// `GET /health`, open to the network. Where the binary lives (a path with the user's name) and whether
 /// a turn is running are for this computer's updater and desktop app only.
-async fn health(State(hub): State<Arc<Hub>>, ConnectInfo(peer): ConnectInfo<SocketAddr>) -> Json<Value> {
+async fn health(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Query(q): Query<HealthQuery>,
+) -> Json<Value> {
     let mut health = json!({
         "ok": true,
         "hostId": hub.host_id,
@@ -73,10 +86,14 @@ async fn health(State(hub): State<Arc<Hub>>, ConnectInfo(peer): ConnectInfo<Sock
         "environment": crate::environment::Environment::current().name(),
     });
     if is_loopback(peer.ip()) {
+        if q.app {
+            crate::update::note_app_poll();
+        }
         let binary = crate::service::binary_identity();
         health["binaryPath"] = json!(binary.map(|(path, _)| path));
         health["binaryHash"] = json!(binary.map(|(_, hash)| hash));
         health["busy"] = hub.busy().into();
+        health["updateRequested"] = crate::update::app_requested().into();
     }
     Json(health)
 }
@@ -117,6 +134,27 @@ async fn command(
         let (status, message) = error_status(&e);
         ApiError(status, message)
     })
+}
+
+/// `POST /mcp/<bot>`: one MCP message from the bot's agent on another computer, answered as JSON. The bot's bridge
+/// token authorizes it from anywhere (a gateway's address, not this computer's loopback), and only for that bot.
+async fn mcp_bridge(State(hub): State<Arc<Hub>>, Path(bot): Path<String>, headers: HeaderMap, body: Bytes) -> Response {
+    let given = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or_default();
+    if !crate::mcp::bridge::authorized(&hub, &bot, given) {
+        return unauthorized().into_response();
+    }
+    let Ok(msg) = serde_json::from_slice::<Value>(&body) else {
+        return ApiError(StatusCode::BAD_REQUEST, "invalid JSON".into()).into_response();
+    };
+    match crate::mcp::bridge::handle(&hub, &bot, &msg).await {
+        Some(reply) => (StatusCode::OK, Json(reply)).into_response(),
+        // A notification: accepted, nothing to say.
+        None => StatusCode::ACCEPTED.into_response(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -271,16 +309,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_bridge_answers_a_bots_token_and_refuses_anyone_else() {
+        let (hub, dir) = temp_hub();
+        let cfg: crate::store::BotConfig =
+            serde_json::from_value(json!({"id": "b1", "name": "B", "backend": "hermes", "cwd": "/w"})).expect("bot");
+        hub.store.save_bot(&cfg).expect("save");
+        let token = crate::mcp::bridge::token(&hub, "b1").expect("a token");
+        let ask = |token: &str, body: &'static [u8]| {
+            let mut headers = HeaderMap::new();
+            headers.insert("authorization", format!("Bearer {token}").parse().expect("header"));
+            mcp_bridge(State(hub.clone()), Path("b1".into()), headers, Bytes::from_static(body))
+        };
+        let listed = ask(&token, br#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#).await;
+        assert_eq!(listed.status(), StatusCode::OK);
+        // A notification has no answer.
+        let notified = ask(&token, br#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).await;
+        assert_eq!(notified.status(), StatusCode::ACCEPTED);
+        // The computer's own token, or another bot's, doesn't open this bot's tools.
+        assert_eq!(
+            ask(&hub.token, br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            ask("cdcb_wrong", br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
     async fn health_keeps_the_binary_and_busy_state_on_this_computer() {
         let (hub, dir) = temp_hub();
         let at = |addr: &str| ConnectInfo(addr.parse::<SocketAddr>().expect("address"));
-        let lan = health(State(hub.clone()), at("192.168.1.20:50000")).await.0;
+        let lan = health(State(hub.clone()), at("192.168.1.20:50000"), Query(HealthQuery::default())).await.0;
         assert!(lan["computerId"].is_string());
-        for key in ["binaryPath", "binaryHash", "busy"] {
+        for key in ["binaryPath", "binaryHash", "busy", "updateRequested"] {
             assert!(lan.get(key).is_none(), "{key} reached the network");
         }
-        let local = health(State(hub), at("[::ffff:127.0.0.1]:50000")).await.0;
+        let local = health(State(hub), at("[::ffff:127.0.0.1]:50000"), Query(HealthQuery::default())).await.0;
         assert_eq!(local["busy"], false);
+        assert!(local["updateRequested"].is_null(), "nobody asked this computer to update");
         assert!(local.get("binaryPath").is_some());
         let _ = std::fs::remove_dir_all(dir);
     }

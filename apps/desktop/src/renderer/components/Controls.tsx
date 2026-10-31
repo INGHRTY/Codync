@@ -121,10 +121,10 @@ export function ChoicePicker<T extends string | number>({ selection, options, on
 /** Picks one of a few values side by side: the replacement for `.segmented`. */
 export function SegmentedChoice<T extends string>({ selection, options, onChange }: { selection: T; options: { id: T; label: string }[]; onChange: (id: T) => void }) {
   const tr = useTr()
-  const index = Math.max(0, options.findIndex((o) => o.id === selection))
+  const index = options.findIndex((o) => o.id === selection)
   return (
     <div className="segmented">
-      <div className="segmented-thumb" style={{ width: `calc((100% - 6px - ${(options.length - 1) * 2}px) / ${options.length})`, transform: `translateX(calc(${index} * (100% + 2px)))` }} />
+      {index >= 0 && <div className="segmented-thumb" style={{ width: `calc((100% - 6px - ${(options.length - 1) * 2}px) / ${options.length})`, transform: `translateX(calc(${index} * (100% + 2px)))` }} />}
       {options.map((o) => (
         <button key={o.id} className={`segmented-option ${o.id === selection ? 'on' : ''}`} onClick={() => onChange(o.id)} aria-pressed={o.id === selection}>
           {tr(o.label)}
@@ -200,7 +200,7 @@ export function CardForm({ children }: { children: ReactNode }) {
  * A titled group of rows (ChatGPT's desktop settings): a small bold heading over a filled,
  * rounded group whose rows are split by inset hairlines.
  */
-export function CardSection({ title, footer, accessory, children }: { title?: string | null; footer?: ReactNode; accessory?: ReactNode; children: ReactNode }) {
+export function CardSection({ title, footer, accessory, children }: { title?: ReactNode; footer?: ReactNode; accessory?: ReactNode; children: ReactNode }) {
   const tr = useTr()
   const rows = Children.toArray(children)
   const heading = typeof title === 'string' ? tr(title) : title

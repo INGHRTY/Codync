@@ -1,7 +1,8 @@
 import Foundation
 
 public enum HostEvent: Sendable {
-    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?)
+    /// The stream's first event; `network` is nil from hosts before the network view.
+    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?)
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
@@ -11,6 +12,10 @@ public enum HostEvent: Sendable {
     case artifact(Artifact)
     /// For the voice of a call on this device (only the device holding the call receives it).
     case call(CallCue)
+    /// The computer's network changed (members, roles, presence, offered bots, cloud assistants).
+    case network(NetworkView)
+    /// The Hermes gateways the user set up changed (saved, deleted or just verified).
+    case connections([HermesConnection])
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -101,13 +106,16 @@ public struct HostClient: Sendable {
         struct UsageWrap: Decodable { var usage: Usage }
         struct ScreenWrap: Decodable { var screen: ScreenState }
         struct ArtifactWrap: Decodable { var artifact: Artifact }
+        struct NetworkWrap: Decodable { var network: NetworkView }
+        struct ConnectionsWrap: Decodable { var connections: [HermesConnection] }
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
         case "hello":
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
-            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen)
+            let network = (try? d.decode(NetworkWrap.self, from: data))?.network
+            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network)
         case "bot":
             if let stub = try? d.decode(StubWrap.self, from: data), stub.bot.deleted == true {
                 return .botDeleted(id: stub.bot.id, rev: stub.bot.rev)
@@ -124,6 +132,11 @@ public struct HostClient: Sendable {
             return (try? d.decode(ArtifactWrap.self, from: data)).map { .artifact($0.artifact) }
         case "call":
             return (try? d.decode(CallCue.self, from: data)).map { .call($0) }
+        case "network":
+            // Not worth a rewind: the next stream's hello carries the view again.
+            return (try? d.decode(NetworkWrap.self, from: data)).map { .network($0.network) }
+        case "connections":
+            return (try? d.decode(ConnectionsWrap.self, from: data)).map { .connections($0.connections) }
         case "resync":
             return .resync
         default:
@@ -136,6 +149,27 @@ public struct HostClient: Sendable {
 
 public extension HostClient {
     func hello() async throws -> Hello { try await call("hello") }
+
+    /// The computer's network, read-only (hosts before it: "unknown method").
+    func networkView() async throws -> NetworkView { try await call("networkView") }
+
+    /// The Hermes gateways on the user's other computers (names and addresses; keys stay on the computer).
+    func listConnections() async throws -> [HermesConnection] {
+        struct Res: Decodable { var connections: [HermesConnection] }
+        let res: Res = try await call("listConnections")
+        return res.connections
+    }
+
+    /// Checks a saved gateway (`id`) or one being typed (`baseUrl` + `key`): its profile, models and features.
+    func testConnection(id: String? = nil, baseUrl: String? = nil, profile: String? = nil, key: String? = nil) async throws -> ConnectionCheck {
+        struct Body: Encodable { var id: String?; var baseUrl: String?; var profile: String?; var key: String? }
+        return try await call("testConnection", Body(id: id, baseUrl: baseUrl, profile: profile, key: key), timeout: 45)
+    }
+
+    /// Updates a computer that's behind this app to the latest release (`Hello.canUpdate`).
+    func installHostUpdate() async throws {
+        let _: Empty = try await call("installHostUpdate")
+    }
 
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
         struct Body: Encodable { var botId: String; var beforeSeq: Int64; var limit: Int }

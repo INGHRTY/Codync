@@ -61,6 +61,10 @@ pub struct App {
     pub entries: HashMap<String, BTreeMap<i64, Entry>>,
     pub usage: Value,
     pub screen: Value,
+    /// This computer's network (`networkView`'s shape); null on hosts without one.
+    pub network: Value,
+    /// The Hermes gateways on the user's other computers (names and addresses, never keys).
+    pub connections: Vec<Value>,
     pub backends: Vec<Value>,
     pub selected: Option<String>,
     pub focus: Focus,
@@ -87,6 +91,8 @@ pub struct App {
     pub trace_turn: Option<i64>,
     /// The bot and turn whose working steps are unfolded.
     pub steps_open: Option<(String, i64)>,
+    /// The bot and turn whose plan tray above the composer is folded.
+    pub plan_folded: Option<(String, i64)>,
     pub compact: bool,
     pub overlays: Vec<Overlay>,
     pub toasts: Vec<Toast>,
@@ -150,6 +156,8 @@ impl App {
             entries: HashMap::new(),
             usage: Value::Null,
             screen: Value::Null,
+            network: Value::Null,
+            connections: vec![],
             backends: vec![],
             selected: None,
             focus: Focus::Roster,
@@ -165,6 +173,7 @@ impl App {
             trace: TraceMode::Off,
             trace_turn: None,
             steps_open: None,
+            plan_folded: None,
             compact: false,
             overlays: vec![],
             toasts: vec![],
@@ -480,7 +489,7 @@ pub fn tilde(path: &str, home: &str) -> String {
 }
 
 #[cfg(test)]
-fn test_app() -> App {
+pub(in crate::tui) fn test_app() -> App {
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     App::new(Client::new("http://127.0.0.1:1", None), tx, String::new())
 }

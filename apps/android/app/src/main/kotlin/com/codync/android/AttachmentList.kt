@@ -49,36 +49,51 @@ import kotlinx.coroutines.withContext
 
 /** A sent image full size, in a sheet while `file` is set. */
 @Composable internal fun AttachmentImageSheet(file: Attachment?, botId: String, state: AppState, store: AppStore, dismiss: () -> Unit) {
-    CodyncSheet(file, dismiss) { shown ->
+    ImageSheet(file, { it.name }, dismiss) { shown, modifier -> AttachmentImage(shown, botId, 4096, state, store, modifier) }
+}
+
+/** An image a bot shared full size, in a sheet while `file` is set. */
+@Composable internal fun SharedImageSheet(file: SharedFile?, entryId: String, state: AppState, store: AppStore, dismiss: () -> Unit) {
+    ImageSheet(file, { it.name }, dismiss) { shown, modifier -> SharedImage(shown, entryId, 4096, state, store, modifier) }
+}
+
+/** A picture full size (iOS `AttachmentViewer`), in a sheet while `item` is set. */
+@Composable private fun <T : Any> ImageSheet(item: T?, name: (T) -> String, dismiss: () -> Unit, image: @Composable (T, Modifier) -> Unit) {
+    CodyncSheet(item, dismiss) { shown ->
         Column(Modifier.fillMaxSize().background(Palette.background)) {
-            ModalHeader(shown.name)
-            Box(Modifier.weight(1f).padding(12.dp), contentAlignment = Alignment.Center) {
-                AttachmentImage(shown, botId, 4096, state, store, Modifier.fillMaxSize())
-            }
+            ModalHeader(name(shown))
+            Box(Modifier.weight(1f).padding(12.dp), contentAlignment = Alignment.Center) { image(shown, Modifier.fillMaxSize()) }
         }
     }
 }
 
 @Composable private fun AttachmentCard(file: Attachment) {
-    Row(Modifier.clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser).semantics(mergeDescendants = true) { }
+    Row(Modifier.clip(RoundedRectangle(16.dp)).background(Palette.chatUser).semantics(mergeDescendants = true) { }
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Symbol(AttachmentIcon.symbol(file.name), size = 19.dp, tint = Palette.secondary)
+        Symbol(AttachmentIcon.symbol(file.name), size = 19.dp, tint = Palette.secondaryOnChatUser)
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(file.name, style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
-            Text(formatBytes(file.size), style = Type.caption2, color = Palette.tertiary)
+            Text(file.name, style = Type.subheadline, color = Palette.onChatUser, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
+            Text(formatBytes(file.size), style = Type.caption2, color = Palette.secondaryOnChatUser)
         }
     }
 }
 
 /** A sent image, fetched from the computer once and then read from the cache; a placeholder until then. */
 @Composable internal fun AttachmentImage(file: Attachment, botId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier,
-    scale: ContentScale = ContentScale.Fit) {
-    var image by remember(file.id, maxPixels) { mutableStateOf<ImageBitmap?>(null) }
+    scale: ContentScale = ContentScale.Fit) = RemoteImage(file.id, maxPixels, state, modifier, scale) { store.attachment(botId, file) }
+
+/** An image a bot shared, like `AttachmentImage`. */
+@Composable internal fun SharedImage(file: SharedFile, entryId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier) =
+    RemoteImage(file.id, maxPixels, state, modifier, ContentScale.Fit) { store.sharedImage(entryId, file) }
+
+/** A picture `load` fetches from the computer into the cache (iOS `AttachmentImage`); a placeholder until then. */
+@Composable private fun RemoteImage(id: String, maxPixels: Int, state: AppState, modifier: Modifier, scale: ContentScale, load: suspend () -> java.io.File) {
+    var image by remember(id, maxPixels) { mutableStateOf<ImageBitmap?>(null) }
     // Retried whenever the link changes: an image the computer couldn't send stays a placeholder, as on iOS.
-    LaunchedEffect(file.id, maxPixels, state.actualConnection) {
+    LaunchedEffect(id, maxPixels, state.actualConnection) {
         if (image != null) return@LaunchedEffect
         try {
-            val source = store.attachment(botId, file)
+            val source = load()
             image = withContext(Dispatchers.IO) { AttachmentFiles.thumbnail(source, maxPixels).asImageBitmap() }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { /* The placeholder stays; the next link change tries again. */ }

@@ -33,6 +33,8 @@ data class Entry(
     val status: String? get() = data.text("status")
     /** Files the bot shared in this message. */
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
+    /** A plan entry's steps: what the agent means to do, and where each one stands. */
+    val plan: List<PlanStep> get() = data["entries"]?.let { runCatching { WireJson.decodeFromJsonElement<List<PlanStep>>(it) }.getOrNull() }.orEmpty()
     /** The artifact a bot published in this message (an artifact card), read leniently: its text stands in for it. */
     val artifact: ArtifactCard? get() = (data["artifact"] as? JsonObject)?.let { runCatching { WireJson.decodeFromJsonElement<ArtifactCard>(it) }.getOrNull() }
     /** Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a
@@ -81,6 +83,10 @@ data class Entry(
     }
 }
 
+/** One step of a plan (`Entry.plan`): `pending`, `in_progress` or `completed`. */
+@Serializable
+data class PlanStep(val content: String, val status: String = "pending", val priority: String? = null)
+
 const val MAX_FILE_BYTES = 100L * 1024 * 1024
 
 @Serializable
@@ -98,11 +104,16 @@ private data class EntryFields(
 @Serializable data class ReplyQuote(val id: String = "", val author: String = "", val text: String = "", val artifact: String? = null)
 
 @Serializable data class Attachment(val id: String, val name: String, val size: Long) {
-    val isImage: Boolean get() = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp")
+    val isImage: Boolean get() = isImageName(name)
 }
+
+private fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp")
 
 /** A file a bot shared: immutable on the computer, checked against its SHA-256 once downloaded. */
 @Serializable data class SharedFile(val id: String, val name: String, val size: Long, val sha256: String) {
+    /** An image small enough to show in the chat (the phone fetches all of it). */
+    val showsAsImage: Boolean get() = isImageName(name) && size <= 20L * 1024 * 1024
+
     /** Before any of it is read: a name that can't leave its folder and a hash to check. */
     fun validate() {
         require(size in 0..MAX_FILE_BYTES && sha256.length == 64 && sha256.all { it in "0123456789abcdef" } &&
@@ -144,7 +155,8 @@ data class PendingSend(
 data class OutgoingFile(val path: String, val name: String, val size: Long)
 
 sealed interface MirrorEvent {
-    data class Hello(val hostId: String, val rev: Long, val usage: JsonObject, val screen: JsonObject?) : MirrorEvent
+    /** The stream's first event; `network` is null from hosts before the network view (or one this app can't read). */
+    data class Hello(val hostId: String, val rev: Long, val usage: JsonObject, val screen: JsonObject?, val network: NetworkView? = null) : MirrorEvent
     data class BotChanged(val bot: Bot) : MirrorEvent
     data class EntryChanged(val entry: Entry) : MirrorEvent
     data class Usage(val value: JsonObject) : MirrorEvent
@@ -153,6 +165,10 @@ sealed interface MirrorEvent {
     data class ArtifactChanged(val artifact: Artifact) : MirrorEvent
     /** For the voice of a call on this device: live only, never a checkpoint. */
     data class Call(val cue: CallCue) : MirrorEvent
+    /** The computer's network changed: live only, never a checkpoint. */
+    data class Network(val view: NetworkView) : MirrorEvent
+    /** The Hermes gateways the user set up changed: live only, never a checkpoint. */
+    data class Connections(val list: List<HermesConnection>) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -160,7 +176,8 @@ sealed interface MirrorEvent {
         fun decode(value: JsonObject): MirrorEvent = when (value.text("type")) {
             "hello" -> Hello(requireNotNull(value.text("hostId")),
                 requireNotNull(value["rev"]?.jsonPrimitive?.longOrNull),
-                value["usage"]?.jsonObject ?: JsonObject(emptyMap()), value["screen"]?.takeUnless { it == JsonNull }?.jsonObject)
+                value["usage"]?.jsonObject ?: JsonObject(emptyMap()), value["screen"]?.takeUnless { it == JsonNull }?.jsonObject,
+                value["network"]?.takeUnless { it == JsonNull }?.let { runCatching { NetworkView.decode(it) }.getOrNull() })
             "bot" -> BotChanged(HostClient.decode(value.getValue("bot").jsonObject))
             "entry" -> EntryChanged(Entry.decode(value.getValue("entry").jsonObject))
             "usage" -> Usage(value.getValue("usage").jsonObject)
@@ -168,6 +185,11 @@ sealed interface MirrorEvent {
             // One this app can't read is passed over rather than fetching everything again: a card or the Library reads it again.
             "artifact" -> runCatching { ArtifactChanged(Artifact.decode(value.getValue("artifact"))) }.getOrDefault(Ignored)
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored
+            // One this app can't read is passed over: the next stream's hello carries the view again.
+            "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
+            "connections" -> runCatching {
+                Connections(WireJson.decodeFromJsonElement<List<HermesConnection>>(value["connections"] ?: JsonArray(emptyList())))
+            }.getOrDefault(Ignored)
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored

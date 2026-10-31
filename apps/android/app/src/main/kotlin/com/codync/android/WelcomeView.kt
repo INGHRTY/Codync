@@ -129,7 +129,9 @@ private val CREW = listOf(
     var replied by remember { mutableStateOf(false) }
     LaunchedEffect(shown) { if (shown) { delay(if (still) 0 else 1600); replied = true } }
     Column(modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(Modifier.fillMaxWidth().rise(shown), contentAlignment = Alignment.CenterEnd) { Bubble("Fix the flaky login test", Palette.bubbleUser) }
+        Box(Modifier.fillMaxWidth().rise(shown), contentAlignment = Alignment.CenterEnd) {
+            Bubble("Fix the flaky login test", Palette.chatUser, ink = Palette.onChatUser)
+        }
         Row(Modifier.rise(shown), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CharacterAvatar("blob", "blue", 28.dp, if (replied) "idle" else "working")
             AnimatedContent(replied, transitionSpec = {
@@ -143,9 +145,9 @@ private val CREW = listOf(
     }
 }
 
-@Composable private fun Bubble(text: String, fill: Color) =
+@Composable private fun Bubble(text: String, fill: Color, ink: Color = Palette.text) =
     Text(text, Modifier.clip(RoundedRectangle(18.dp)).background(fill).padding(horizontal = 14.dp, vertical = 9.dp),
-        style = Type.subheadline, color = Palette.text)
+        style = Type.subheadline, color = ink)
 
 /** Opens a short recording of the app in use on YouTube, for anyone who can't pair a computer yet. */
 @Composable internal fun DemoButton(modifier: Modifier = Modifier) {

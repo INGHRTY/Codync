@@ -375,6 +375,23 @@ private func botEvent(_ id: String, name: String, rev: Int) -> String {
     account.retire()
 }
 
+@MainActor @Test func eachComputersPushSwitchIsSavedWithIt() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let saved = randomComputer("Saved")
+    storage.computers = [saved]
+    let account = AccountStore(storage: storage, cloud: nil) { _ in
+        BotStore(computer: saved, storage: storage) { _ in FakeRemote(.ready(.direct)) }
+    }
+    defer { account.retire() }
+    account.setNotifications(saved.id, false)
+    #expect(storage.computers.first?.notifications == false)
+    #expect(account.store(for: saved.id)?.computer.notifications == false)
+    account.setNotifications(saved.id, true)
+    #expect(storage.computers.first?.notifications == nil)
+    #expect(account.store(for: saved.id)?.computer.notifications == nil)
+}
+
 extension FakeRemote {
     func setCancelResult(_ result: MailboxCancel) { cancelResult = result }
 }
@@ -621,9 +638,11 @@ extension FakeRemote {
 
 // MARK: - Version compatibility (docs/reference/compatibility.md)
 
-private func helloJSON(version: String, minApp: String? = nil, backends: String = "[]") -> String {
+func helloJSON(version: String, minApp: String? = nil, backends: String = "[]", canUpdate: Bool = false,
+               latestVersion: String? = nil) -> String {
     let min = minApp.map { #","minApp":"\#($0)""# } ?? ""
-    return #"{"hostId":"h1","name":"Mac","version":"\#(version)"\#(min),"os":"macos","backends":\#(backends),"rev":0}"#
+    let latest = latestVersion.map { #","latestVersion":"\#($0)""# } ?? ""
+    return #"{"hostId":"h1","name":"Mac","version":"\#(version)"\#(min)\#(latest),"os":"macos","backends":\#(backends),"rev":0,"canUpdate":\#(canUpdate)}"#
 }
 
 @MainActor @Test func hostNeedingANewerAppStopsSyncAndAsksForTheUpdate() async throws {

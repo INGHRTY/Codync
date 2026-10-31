@@ -23,6 +23,7 @@ pub fn start(hub: &Arc<Hub>) {
     });
     tokio::spawn(usage::poll(hub.clone()));
     tokio::spawn(update::automatic_loop(hub.clone()));
+    tokio::spawn(update::release_watch());
     tokio::spawn(screen::serve_helpers(hub.screen.clone()));
     tokio::spawn(relay::run(hub.clone()));
     #[cfg(target_os = "linux")]

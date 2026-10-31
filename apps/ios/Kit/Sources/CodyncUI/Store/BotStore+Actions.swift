@@ -306,6 +306,13 @@ extension BotStore {
         if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }
     }
 
+    /// Reads the network again; the host asks the other computers when what it heard is stale, and
+    /// the `network` event brings what they answer.
+    public func refreshNetwork() async {
+        guard !retired, let client else { return }
+        if let view = try? await client.networkView(), !Task.isCancelled { network = view }
+    }
+
     public func loadOlder(_ botId: String) async {
         guard let client, !historyComplete.contains(botId) else { return }
         let first = chat(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max

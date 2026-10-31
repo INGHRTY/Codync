@@ -1,6 +1,6 @@
 //! The working line's steps: what the running turn has done so far, unfolded for one bot and turn.
 
-use super::{App, Bot, Entry};
+use super::{App, Bot, Entry, Kind};
 
 /// The turn running now; a queued message already holds the next turn.
 pub(in crate::tui) fn running_turn(entries: &[&Entry]) -> Option<i64> {
@@ -17,6 +17,36 @@ impl App {
     /// Whether `bot`'s chat shows the working line: a turn in flight in this chat, while connected.
     pub(in crate::tui) fn shows_activity(&self, bot: &Bot) -> bool {
         self.online && bot.busy() && bot.works_here()
+    }
+
+    /// The running turn's plan, for the tray above the composer: its turn and its `(status, step)` lines.
+    pub(in crate::tui) fn plan_tray(&self, bot: &Bot) -> Option<(i64, Vec<(String, String)>)> {
+        if !self.shows_activity(bot) {
+            return None;
+        }
+        let entries = self.lane(&bot.id);
+        let turn = running_turn(&entries)?;
+        let plan = entries.iter().find(|e| e.turn == turn && e.kind == Kind::Plan)?;
+        let items = plan.data["entries"].as_array()?;
+        let steps: Vec<(String, String)> = items
+            .iter()
+            .map(|s| {
+                (
+                    s["status"].as_str().unwrap_or("pending").to_owned(),
+                    s["content"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .filter(|(_, content)| !content.is_empty())
+            .collect();
+        (!steps.is_empty()).then_some((turn, steps))
+    }
+
+    /// A click on the plan tray: folds or unfolds it for this turn.
+    pub(in crate::tui) fn toggle_plan(&mut self) {
+        let Some(bot) = self.bot().cloned() else { return };
+        let Some((turn, _)) = self.plan_tray(&bot) else { return };
+        let key = (bot.id.clone(), turn);
+        self.plan_folded = if self.plan_folded.as_ref() == Some(&key) { None } else { Some(key) };
     }
 
     /// `>` or a click on the working line: unfolds or folds the selected bot's steps for this turn, once thinking

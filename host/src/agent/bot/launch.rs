@@ -1,14 +1,14 @@
 //! The agent process: which commands start it, the ACP handshake, the bot's model, and how its instructions are
 //! attached to a session request.
 
-use super::{Adapter, Conn, SessionCaps};
+use super::{Adapter, Conn};
 use crate::agent::acp::{self, Acp};
 use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
-use std::time::{Duration, Instant};
+use std::collections::BTreeMap;
+use std::time::Duration;
 
 /// ACP's `systemPrompt`: the bot's instructions added to the agent's own.
 pub(crate) fn system_prompt(system: &str) -> Value {
@@ -38,35 +38,96 @@ fn claude_options(cfg: &BotConfig) -> Value {
     json!({"options": {"settings": settings, "extraArgs": {"thinking-display": "summarized"}}})
 }
 
-/// Ways to start the bot's agent over ACP, best first: its own command, else its backend's.
-pub(crate) fn launch_commands(cfg: &BotConfig) -> Result<Vec<Candidate>> {
+/// Ways to start the bot's agent over ACP, best first: its own command, else its backend's. `profile` is a local
+/// Hermes bot's profile, which its Hermes runs as (`hermes -p <profile> acp`).
+pub(crate) fn launch_commands(cfg: &BotConfig, profile: Option<&str>) -> Result<Vec<Candidate>> {
     Ok(match cfg.command.as_deref().map(str::trim) {
         Some(c) if !c.is_empty() => vec![Candidate::Ready(Cmd { program: c.to_owned(), args: String::new() })],
-        _ => crate::agent::backends::launch_candidates(&cfg.backend)?,
+        _ => in_profile(crate::agent::backends::launch_candidates(&cfg.backend)?, profile),
     })
+}
+
+/// The same ways to start, under `profile`: Hermes' `-p` comes before its subcommand, which the CLI reads before it
+/// parses anything ([Hermes frontend](../../../../docs/plans/hermes-frontend.md)).
+fn in_profile(candidates: Vec<Candidate>, profile: Option<&str>) -> Vec<Candidate> {
+    let Some(profile) = profile else { return candidates };
+    candidates
+        .into_iter()
+        .map(|candidate| match candidate {
+            Candidate::Ready(mut command) => {
+                command.args = if command.args.is_empty() {
+                    format!("-p {profile}")
+                } else {
+                    format!("-p {profile} {}", command.args)
+                };
+                Candidate::Ready(command)
+            }
+            // A registry build is another backend's: Hermes has none.
+            build @ Candidate::Build(_) => build,
+        })
+        .collect()
 }
 
 /// Switches a session (`session/new` or `session/load` answered `res`) to the bot's
 /// chosen model, then sets that model's options (effort, fast…). Returns the answer holding
 /// the session's config options now: a model can change them.
-pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Value> {
-    let Some(model) = cfg.model.as_deref().filter(|m| !m.is_empty()) else { return Ok(res.clone()) };
-    let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) else {
-        let r = acp.request("session/set_model", json!({"sessionId": sid, "modelId": model})).await;
-        return r.map(|_| res.clone()).map_err(|e| model_error(model, &e));
-    };
-    let (model, options) = model_choice(res, model, &cfg.model_options);
-    let set = |id: &str, value: &str| {
-        acp.request("session/set_config_option", json!({"sessionId": sid, "configId": id, "value": value}))
-    };
-    let mut current = set(config_id, model).await.map_err(|e| model_error(model, &e))?;
+pub(crate) async fn select_model(conn: &mut Conn, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Value> {
+    let selected = cfg.model.as_deref().filter(|m| !m.is_empty());
+    let (model, options) = model_choice(res, selected.unwrap_or("Default"), &cfg.model_options);
+    let set = |id: &str, value: &str| json!({"sessionId": sid, "configId": id, "value": value});
+    let mut current = res.clone();
+    if selected.is_some() {
+        if let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) {
+            let answer = conn
+                .request("session/set_config_option", set(config_id, model))
+                .await
+                .map_err(|e| model_error(model, &e))?;
+            if answer["configOptions"].is_array() {
+                current = answer;
+            }
+        } else {
+            conn.request("session/set_model", json!({"sessionId": sid, "modelId": model}))
+                .await
+                .map_err(|e| model_error(model, &e))?;
+        }
+    }
     for (id, value) in options {
-        let answer = set(id, value).await.map_err(|e| model_error(&format!("{model} with {id}={value}"), &e))?;
+        let answer = conn
+            .request("session/set_config_option", set(id, value))
+            .await
+            .map_err(|e| model_error(&format!("{model} with {id}={value}"), &e))?;
         if answer["configOptions"].is_array() {
             current = answer;
         }
     }
-    Ok(if current["configOptions"].is_array() { current } else { res.clone() })
+    Ok(current)
+}
+
+/// The session's approval setting for a bot that never asks: Hermes' own edit approval goes to "don't ask", so its
+/// shell and file edits don't stop on a question the host answers yes to anyway. Any other bot, or Hermes asking,
+/// keeps what the agent was set to. Returns the answer holding the session's config options now.
+pub(crate) async fn apply_approval(conn: &mut Conn, res: &Value, sid: &str, cfg: &BotConfig) -> Value {
+    let Some(policy) = auto_policy(res, cfg) else { return res.clone() };
+    let params = json!({"sessionId": sid, "configId": "edit_approval_policy", "value": policy});
+    match conn.request("session/set_config_option", params).await {
+        Ok(answer) if answer["configOptions"].is_array() => answer,
+        Ok(_) => res.clone(),
+        Err(e) => {
+            tracing::warn!(bot = %cfg.id, error = format!("{e:#}"), "couldn't turn the agent's approvals off");
+            res.clone()
+        }
+    }
+}
+
+/// The `edit_approval_policy` value a bot that never asks wants, when its agent offers that option.
+fn auto_policy(res: &Value, cfg: &BotConfig) -> Option<&'static str> {
+    if cfg.backend != "hermes" || cfg.permission != crate::store::Permission::Auto {
+        return None;
+    }
+    let option = res["configOptions"].as_array()?.iter().find(|o| o["id"] == "edit_approval_policy")?;
+    let offers = |value: &str| option["options"].as_array().is_some_and(|o| o.iter().any(|v| v["value"] == value));
+    // Hermes' "Don't Ask"; "Accept Edits" is the narrower one it falls back on.
+    ["session", "workspace_session"].into_iter().find(|value| offers(value))
 }
 
 /// The model to select and the options to set on it: the model id's variant, then the bot's own. How the agent
@@ -138,26 +199,10 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
             return Err(acp::Failure::error(acp::FailureKind::Timeout, message));
         }
     };
-    let sessions = SessionCaps {
-        load: init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false),
-        close: init["agentCapabilities"]["sessionCapabilities"]["close"].is_object(),
-        system_prompt: init["agentCapabilities"]["sessionCapabilities"]["systemPrompt"].is_object(),
-        additional_directories: init["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"].is_object(),
-    };
-    Ok(Conn {
-        acp,
-        rx,
-        sessions,
-        adapter: adapter(&init),
-        loaded: HashMap::new(),
-        started: Instant::now(),
-        fast_options: HashMap::new(),
-        reports_compaction: false,
-        usage: HashMap::new(),
-    })
+    Ok(Conn::acp(acp, rx, &init))
 }
 
-fn adapter(init: &Value) -> Adapter {
+pub(super) fn adapter(init: &Value) -> Adapter {
     if init["agentCapabilities"]["_meta"]["claudeCode"].is_object() {
         Adapter::Claude
     } else if init["agentInfo"]["name"].as_str().is_some_and(|name| name.ends_with("codex-acp")) {
@@ -200,6 +245,43 @@ mod tests {
         ]});
         let own = [("mode", "auto"), ("effort", "high")].map(|(k, v)| (k.to_owned(), v.to_owned())).into();
         assert_eq!(model_choice(&res, "opus[mode=acceptEdits]", &own), ("opus", vec![("effort", "high")]));
+    }
+
+    #[test]
+    fn a_hermes_bot_starts_in_its_profile() {
+        let ready = |args: &str| Candidate::Ready(Cmd { program: "/bin/hermes".into(), args: args.into() });
+        let started = in_profile(vec![ready("acp"), ready("")], Some("codync-abc"));
+        let args: Vec<_> = started
+            .into_iter()
+            .map(|c| match c {
+                Candidate::Ready(cmd) => cmd.args,
+                Candidate::Build(_) => unreachable!("nothing builds here"),
+            })
+            .collect();
+        assert_eq!(args, ["-p codync-abc acp", "-p codync-abc"]);
+        // No profile (an agent of another kind, or Hermes' own command): the ways to start stay as they are.
+        let plain = in_profile(vec![ready("acp")], None);
+        assert!(matches!(&plain[0], Candidate::Ready(cmd) if cmd.args == "acp"));
+    }
+
+    #[test]
+    fn a_bot_that_never_asks_turns_hermes_own_approval_off() {
+        let hermes = |permission: &str| -> BotConfig {
+            serde_json::from_value(
+                json!({"id": "a", "name": "B", "backend": "hermes", "cwd": "/w", "permission": permission}),
+            )
+            .unwrap()
+        };
+        let offers = |values: &[&str]| {
+            json!({"configOptions": [{"id": "edit_approval_policy", "category": "mode", "type": "select",
+                "options": values.iter().map(|v| json!({"value": v})).collect::<Vec<_>>()}]})
+        };
+        let full = offers(&["ask", "workspace_session", "session"]);
+        assert_eq!(auto_policy(&full, &hermes("auto")), Some("session"));
+        // An older Hermes with only the narrower setting takes that one.
+        assert_eq!(auto_policy(&offers(&["ask", "workspace_session"]), &hermes("auto")), Some("workspace_session"));
+        assert_eq!(auto_policy(&full, &hermes("ask")), None, "the bot asks on Codync's card");
+        assert_eq!(auto_policy(&json!({"configOptions": []}), &hermes("auto")), None);
     }
 
     #[test]

@@ -150,7 +150,9 @@ public struct Attachment: Codable, Hashable, Sendable, Identifiable {
         self.size = size
     }
 
-    public var isImage: Bool {
+    public var isImage: Bool { Self.isImage(name) }
+
+    public static func isImage(_ name: String) -> Bool {
         ["png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp"].contains((name as NSString).pathExtension.lowercased())
     }
 }

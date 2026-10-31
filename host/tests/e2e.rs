@@ -507,6 +507,9 @@ async fn catch_up(host: &Host) -> Vec<Value> {
             let line: String = buf.drain(..=i).collect();
             if let Some(data) = line.trim_end().strip_prefix("data:")
                 && let Ok(v) = serde_json::from_str::<Value>(data.trim_start())
+                // A live usage refresh lands whenever the agents' usage poll finishes (later on a
+                // busy machine); its shape is `hello.usage`'s.
+                && v["type"] != "usage"
             {
                 events.push(v);
             }
@@ -564,6 +567,11 @@ async fn wire_shape_matches_the_snapshot() {
     let mut current = std::collections::BTreeMap::new();
     shape(&hello, "hello", &mut current);
     for ev in catch_up(&host).await {
+        // Whether the lead bot's agent sign-in card is posted at all is the machine's answer to the
+        // sign-in probe (sometimes "signed out" under load), not part of what this snapshot guards.
+        if ev["entry"]["data"]["connectionRequest"]["kind"] == "agent" {
+            continue;
+        }
         event_shape(&ev, &mut current);
     }
     assert!(current.keys().any(|k| k.starts_with("event:entry(tool)")), "the turn's entries are missing");

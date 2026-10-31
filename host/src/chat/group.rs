@@ -13,6 +13,7 @@
 
 use crate::LockExt;
 use crate::agent::bot::{Cmd, NoticeStyle};
+use crate::chat::prompt::Files;
 use crate::hub::{BotStatus, Hub};
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, BotKind, Entry, EntryKind, Lane, Store};
@@ -24,7 +25,7 @@ use tokio::sync::oneshot;
 
 const MAX_ROUNDS: usize = 3;
 /// A member's turn that runs longer counts as a pass.
-const MEMBER_TIMEOUT: Duration = Duration::from_secs(600);
+const MEMBER_TIMEOUT: Duration = Duration::from_mins(10);
 /// Replies per room turn, across all rounds.
 const MAX_REPLIES: usize = 10;
 /// Room lines a member is shown per turn.
@@ -132,6 +133,7 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
         let group = group(hub, group_id)?;
         let members = members(hub, &group);
         let since_user = since_last_user_message(hub, lane)?;
+        let answered = answers(&since_user);
         let mut speakers =
             if round == 0 { responders(&members, &since_user) } else { cited(&members, &since_user, &asked) };
         // Each round starts one member later, so the same bot doesn't always speak first.
@@ -151,19 +153,12 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
             if later.contains(&member.id) {
                 continue;
             }
-            let (prompt, shown) = ask(hub, &group, &members, member, lane)?;
+            let (prompt, shown) = ask(hub, &group, &members, member, lane, &answered)?;
             asked.insert(member.id.clone(), shown);
             let (reply, answer) = oneshot::channel();
             let busy = busy_elsewhere(hub, &member.id, lane);
-            let turn = GroupTurn {
-                lane: lane.clone(),
-                prompt,
-                shown,
-                epoch,
-                late: busy,
-                reply,
-                answers: answers(&since_user),
-            };
+            let turn =
+                GroupTurn { lane: lane.clone(), prompt, shown, epoch, late: busy, reply, answers: answered.clone() };
             if hub.send_cmd(&member.id, Cmd::Group(turn)).is_err() {
                 continue;
             }
@@ -229,8 +224,8 @@ pub fn refresh(hub: &Hub, turn: &mut GroupTurn, me: &BotConfig) -> Result<()> {
     if !group.members.contains(&me.id) {
         bail!("no longer in the group");
     }
-    (turn.prompt, turn.shown) = ask(hub, &group, &members(hub, &group), me, &turn.lane)?;
     turn.answers = answers(&since_last_user_message(hub, &turn.lane)?);
+    (turn.prompt, turn.shown) = ask(hub, &group, &members(hub, &group), me, &turn.lane, &turn.answers)?;
     Ok(())
 }
 
@@ -239,9 +234,16 @@ fn group(hub: &Hub, id: &str) -> Result<BotConfig> {
 }
 
 /// `me`'s prompt for a turn in the room, and the newest message it shows (its `seq`).
-fn ask(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotConfig, lane: &Lane) -> Result<(String, i64)> {
+fn ask(
+    hub: &Hub,
+    group: &BotConfig,
+    members: &[BotConfig],
+    me: &BotConfig,
+    lane: &Lane,
+    answered: &[String],
+) -> Result<(String, i64)> {
     let shown = hub.store.messages_after(lane, 0, 1)?.last().map_or(0, |e| e.seq);
-    Ok((member_prompt(hub, group, members, me, lane)?, shown))
+    Ok((member_prompt(hub, group, members, me, lane, answered)?, shown))
 }
 
 fn members(hub: &Hub, group: &BotConfig) -> Vec<BotConfig> {
@@ -333,7 +335,14 @@ fn mentions(text: &str, handle: &str) -> bool {
         .any(|(i, _)| lower[i + needle.len()..].chars().next().is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_')))
 }
 
-fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotConfig, lane: &Lane) -> Result<String> {
+fn member_prompt(
+    hub: &Hub,
+    group: &BotConfig,
+    members: &[BotConfig],
+    me: &BotConfig,
+    lane: &Lane,
+    answered: &[String],
+) -> Result<String> {
     let peers: Vec<&BotConfig> = members.iter().filter(|m| m.id != me.id).collect();
     let peer_names = if peers.is_empty() {
         "just the user".to_owned()
@@ -367,7 +376,7 @@ fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotCo
     let mut lines: Vec<String> = vec![];
     let header = format!("[Group chat: \"{}\" - with {peer_names}]", group.name);
     for e in hub.store.messages_after(lane, seen, HISTORY_LINES)? {
-        lines.push(line(hub, group, &e, me));
+        lines.push(line(hub, group, &e, me, answered));
     }
     out.push(header);
     if lines.is_empty() {
@@ -384,7 +393,7 @@ fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotCo
     Ok(out.join("\n"))
 }
 
-fn line(hub: &Hub, group: &BotConfig, e: &Entry, me: &BotConfig) -> String {
+fn line(hub: &Hub, group: &BotConfig, e: &Entry, me: &BotConfig, answered: &[String]) -> String {
     let text = e.data["text"].as_str().unwrap_or_default();
     let reacted = crate::chat::reactions::describe(hub, e);
     if e.kind == EntryKind::User.as_str() {
@@ -395,7 +404,14 @@ fn line(hub: &Hub, group: &BotConfig, e: &Entry, me: &BotConfig) -> String {
         return format!(
             "User: {}{}{reacted}",
             reply.unwrap_or_default(),
-            crate::chat::prompt::of_message(&hub.store, &me.skills, &root, text, attachments)
+            crate::chat::prompt::of_message(
+                &hub.store,
+                &me.skills,
+                &root,
+                text,
+                attachments,
+                files_for(me, answered, &e.id)
+            )
         );
     }
     let author = e.data["author"].as_str().unwrap_or_default();
@@ -404,6 +420,18 @@ fn line(hub: &Hub, group: &BotConfig, e: &Entry, me: &BotConfig) -> String {
         format!("{} (you): {text}{reacted}", me.name)
     } else {
         format!("{}: {text}{reacted}", hub.bot_name(author))
+    }
+}
+
+/// How `me` gets `entry`'s files: by path on this computer; on a gateway, as images in the turn for the
+/// message this turn answers (`agent::bot::images`), and by name only for the room's older lines.
+fn files_for(me: &BotConfig, answered: &[String], entry: &str) -> Files {
+    if me.connection.is_none() {
+        Files::Here
+    } else if answered.iter().any(|id| id == entry) {
+        Files::Images
+    } else {
+        Files::Named
     }
 }
 

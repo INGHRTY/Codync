@@ -9,8 +9,11 @@ import {
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import type { NetworkView, RecoveryCode } from '@shared/network'
+import type { Connection as Gateway } from '@shared/connections'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import { rosterOrder } from '../lib/computer-roster'
+import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
@@ -34,12 +37,20 @@ export class BotMirror extends Observable {
   client: HostClient | null = null
   hello: Hello | null = null
   hostVersion: { version: string; minApp?: string | null } | null = null
+  /** An update asked of this computer from here while it's behind; cleared once its version changes. */
+  hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
   cloud: CloudStatus | null = null
+  /** This computer's network; null until known, and on hosts without `networkView`. */
+  network: NetworkView | null = null
+  /** The Hermes gateways on the user's other computers (the cloud bots' side); empty until known. */
+  connections: Gateway[] = []
+  /** A new network's recovery code until the user says they saved it: the host keeps it nowhere. */
+  recoveryCode: RecoveryCode | null = null
   historyComplete = new Set<string>()
   routineDrafts = new Map<string, string>()
   readonly composerDrafts: ComposerDrafts
@@ -103,6 +114,23 @@ export class BotMirror extends Observable {
     return null
   }
 
+  /** What the update notice offers while this computer is behind this app. */
+  get hostUpdateOffer(): HostUpdateOffer {
+    return offerHostUpdate(this.hostUpdate, this.hello?.canUpdate === true)
+  }
+
+  /** This computer's Codync row at `now` (Settings > Computers); null until its `hello` arrives. */
+  hostVersionLine(now = Date.now()): HostVersionLine | null {
+    if (!this.hello) return null
+    return hostVersionLine(this.hello.version, this.hello.latestVersion, this.mismatch,
+      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os)
+  }
+
+  /** When an update asked from here stops reading as under way; null when none was asked. */
+  get hostUpdateWaitEnds(): number | null {
+    return this.hostUpdate?.kind === 'requested' ? this.hostUpdate.at + HOST_UPDATE_WAIT : null
+  }
+
   /** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */
   get roster(): Bot[] {
     return [...this.bots.values()].filter((b) => !b.hidden).sort(rosterOrder)
@@ -134,8 +162,9 @@ export class BotMirror extends Observable {
     return group.members.map((id) => this.bots.get(id)).filter((b): b is Bot => !!b)
   }
 
-  authorName(id: string | null | undefined) {
-    return (id && this.bots.get(id)?.name) || 'A deleted bot'
+  /** A bot's name; `fallback` for one that isn't this computer's (a bot on another computer). */
+  authorName(id: string | null | undefined, fallback?: string) {
+    return (id && this.bots.get(id)?.name) || fallback || 'A deleted bot'
   }
 
   get connectionLabel() {
@@ -188,6 +217,21 @@ export class BotMirror extends Observable {
 
   setError(message: string | null) {
     this.lastError = message
+    this.changed()
+  }
+
+  setNetwork(network: NetworkView | null) {
+    this.network = network
+    this.changed()
+  }
+
+  setConnections(connections: Gateway[]) {
+    this.connections = connections
+    this.changed()
+  }
+
+  setRecoveryCode(code: RecoveryCode | null) {
+    this.recoveryCode = code
     this.changed()
   }
 

@@ -30,6 +30,13 @@ public enum Palette {
     public static let surface = Color(light: 0xF4F4F4, dark: 0x141414)
     public static let bubbleAgent = Color(light: 0xF0F0F0, dark: 0x1C1C1C)
     public static let bubbleUser = Color(light: 0xE2E2E2, dark: 0x363636)
+    /// The chat's own fill, apart from the chips that reuse `bubbleUser`: the user's own messages are the
+    /// only solid bubble in the conversation, so the eye lands on what was said to the bot.
+    public static let chatUser = Color(light: 0x1C1C1C, dark: 0xF2F2F2)
+    /// Text on `chatUser`: the ink's opposite, readable in both schemes.
+    public static let onChatUser = Color(light: 0xFFFFFF, dark: 0x141414)
+    /// Muted text on `chatUser` (a quoted line, a timestamp).
+    public static let secondaryOnChatUser = Color(light: 0xB4B4B4, dark: 0x5A5A5A)
     public static let border = Color(light: 0xE6E6E6, dark: 0x262626)
     public static let text = Color(light: 0x141414, dark: 0xF2F2F2)
     public static let secondary = Color(light: 0x6B6B6B, dark: 0x9A9A9A)

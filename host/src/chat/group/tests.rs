@@ -75,6 +75,10 @@ use crate::hub::BotStatus;
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// How long a step may take before the test calls it stuck. Generous: fixture agents start as
+/// real processes, and a busy CI runner (Windows above all) can take seconds to start one.
+const WAIT: Duration = Duration::from_secs(30);
+
 /// A host with agent bots `a` and `b` (the scripted fixture agent) and a group of both.
 struct Room {
     hub: Arc<Hub>,
@@ -145,7 +149,7 @@ impl Room {
     }
 
     async fn settle(&self) {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(WAIT, async {
             loop {
                 tokio::time::sleep(Duration::from_millis(300)).await;
                 let idle = ["a", "b"].iter().all(|b| self.hub.runtime(b).status == BotStatus::Idle);
@@ -286,7 +290,7 @@ async fn stop_ends_the_room_turn_before_the_next_speaker() {
     let room = Room::new();
     room.send("BLOCK everyone look", None).await;
     let hub = room.hub.clone();
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while hub.runtime("a").status != BotStatus::Working {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -307,7 +311,7 @@ async fn ask_busy_a(room: &Room) -> Entry {
         .await
         .unwrap();
     let hub = room.hub.clone();
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while hub.runtime("a").status != BotStatus::Working {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -316,7 +320,7 @@ async fn ask_busy_a(room: &Room) -> Entry {
     .expect("a starts its own turn");
 
     room.send("@a are you there", None).await;
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         loop {
             let entries = hub.store.history(&room.group, i64::MAX, 100).unwrap();
             if let Some(e) = entries.into_iter().find(|e| e.kind == "notice") {
@@ -352,7 +356,7 @@ async fn stopping_a_busy_member_in_its_own_chat_keeps_its_room_answer() {
     ask_busy_a(&room).await;
     // The user frees `a` from its own chat: the answer the room was promised still comes.
     crate::api::dispatch(&room.hub, &Caller::Local, "stop", json!({"botId": "a"})).await.unwrap();
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while room.replies(&main).is_empty() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -369,7 +373,7 @@ async fn a_late_answer_survives_newer_messages_and_sees_them() {
     let main = Lane::main(&room.group);
     ask_busy_a(&room).await;
     room.send("@b meanwhile check CI", None).await;
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while room.replies(&main).is_empty() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -384,6 +388,50 @@ async fn a_late_answer_survives_newer_messages_and_sees_them() {
     let late = prompts.lines().last().unwrap();
     assert!(late.contains("User: @b meanwhile check CI") && late.contains("b: reply: group"), "{prompts}");
     room.shutdown().await;
+}
+
+#[test]
+fn a_gateway_member_is_named_the_files_of_the_lines_the_turn_does_not_answer() {
+    let dir = std::env::temp_dir().join(format!("codync-group-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let group: BotConfig =
+        serde_json::from_value(json!({"id": "g", "kind": "group", "name": "Crew", "members": ["a", "b"]})).unwrap();
+    store.save_bot(&group).unwrap();
+    let member: BotConfig =
+        serde_json::from_value(json!({"id": "b", "name": "Bob", "backend": "claude", "cwd": dir, "connection": "vps"}))
+            .unwrap();
+    store.save_bot(&member).unwrap();
+    let hub = Hub::new(
+        store,
+        "line-test".into(),
+        crate::remote::identity::Identity::load_or_create(&dir).unwrap(),
+        "test".into(),
+        0,
+    );
+    let photo = Entry {
+        id: "e1".into(),
+        seq: 1,
+        bot_id: "g".into(),
+        rev: 1,
+        kind: "user".into(),
+        turn: 1,
+        data: json!({"text": "what is this?", "attachments": [{"id": uuid::Uuid::new_v4().to_string(), "name": "Photo.PNG"}]}),
+        created_at: 0,
+        updated_at: 0,
+    };
+    // The message the turn answers travels as images; the turn names what it can't carry.
+    assert_eq!(line(&hub, &group, &photo, &member, std::slice::from_ref(&photo.id)), "User: what is this?");
+    // An older line the turn doesn't answer is only named, so the member knows a photo was there.
+    let older = line(&hub, &group, &photo, &member, &[]);
+    assert!(older.contains("[Attached files: Photo.PNG."), "{older}");
+    assert!(!older.contains("read them from these paths"), "{older}");
+    // A member on this computer still reads it by path.
+    let mut local = member.clone();
+    local.connection = None;
+    let here = line(&hub, &group, &photo, &local, &[]);
+    assert!(here.contains("[Attached files — read them from these paths]"), "{here}");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

@@ -18,7 +18,6 @@ data class AppState(
     val approvedAccess: Map<String, String> = emptyMap(),
     /** The account computer an access request is running for: one at a time. */
     val askingAccess: String? = null,
-    val notifications: Boolean = true,
     val tasks: Boolean = true,
     val setupComplete: Boolean = false,
     val loading: Boolean = true,
@@ -52,10 +51,16 @@ data class AppState(
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */
     val screen: ScreenState? = null,
+    /** The computer's network as phones see it (`null`: the host predates it). */
+    val network: NetworkView? = null,
+    /** The Hermes gateways on the user's other computers (the cloud bots' side); empty from a host that predates them. */
+    val connections: List<HermesConnection> = emptyList(),
     /** The remote screen viewer is open (`codync://screen`, the chat header, Computers). */
     val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */
     val unreadable: Boolean = false,
+    /** The update this phone asked of a computer that's behind (`requestHostUpdate`). */
+    val hostUpdate: HostUpdate? = null,
     val error: String? = null,
 ) {
     /** Connection alone cannot make a cached roster current before event catch-up. */

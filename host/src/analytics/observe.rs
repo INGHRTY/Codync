@@ -8,7 +8,7 @@ use crate::store::BotConfig;
 use serde_json::{Map, Value};
 
 /// Methods that stand for one event with one fixed property.
-const FIXED: [(&str, Event, &str, &str); 8] = [
+const FIXED: [(&str, Event, &str, &str); 14] = [
     ("editHandoff", Event::HandoffAnswered, "action", "edit"),
     ("keepConversation", Event::HandoffAnswered, "action", "keep"),
     ("credentialSaveLogin", Event::CredentialSaved, "kind", "login"),
@@ -17,14 +17,22 @@ const FIXED: [(&str, Event, &str, &str); 8] = [
     ("setComposioKey", Event::CredentialSaved, "kind", "composio"),
     ("setVoiceKey", Event::CredentialSaved, "kind", "voice"),
     ("setAgentEnv", Event::CredentialSaved, "kind", "agent_env"),
+    // Never the computer's name, the invite or the recovery code.
+    ("networkInvite", Event::NetworkChanged, "action", "invite"),
+    ("networkPromote", Event::NetworkChanged, "action", "promote"),
+    ("networkRemove", Event::NetworkChanged, "action", "remove"),
+    ("networkRecover", Event::NetworkChanged, "action", "recover"),
+    ("setNetworkRules", Event::NetworkChanged, "action", "rules"),
+    ("networkLeave", Event::NetworkChanged, "action", "leave"),
 ];
 
 /// Switches the host owns (`setting_changed`): the method and the setting it names.
-const SETTINGS: [(&str, &str); 4] = [
+const SETTINGS: [(&str, &str); 5] = [
     ("setCloud", "remote_access"),
     ("setApproval", "approval"),
     ("setHostAutomaticUpdates", "automatic_updates"),
     ("setScreenEnabled", "remote_screen"),
+    ("setAssistants", "cloud_assistants"),
 ];
 
 /// The event an API call stands for, with its properties, read before the call runs.
@@ -55,6 +63,13 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
 /// The rest of `observe`: one arm per method.
 fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Event> {
     Some(match method {
+        "setCloudUrl" => {
+            // The address itself stays off the event. `on` is only whether a custom URL was saved.
+            let on = b["url"].as_str().is_some_and(|url| !url.trim().is_empty());
+            p.insert("setting".into(), "remote_access_url".into());
+            p.insert("on".into(), on.into());
+            Event::SettingChanged
+        }
         "createBot" => {
             let group = b["kind"] == "group";
             p.insert("kind".into(), (if group { "group" } else { "bot" }).into());
@@ -133,6 +148,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
         "installHostUpdate" => Event::HostUpdateInstalled,
+        // Never the computer's name, the connector's address or the invite.
+        "networkCreate" | "networkJoin" => {
+            p.insert("via".into(), (if method == "networkCreate" { "create" } else { "invite" }).into());
+            Event::NetworkJoined
+        }
         "pairing" => Event::PairingCodeCreated,
         // Approving is `device_paired`, from `cloud::decide`.
         "decideAccessRequest" if b["approve"] == false => Event::AccessRequestDenied,
@@ -313,6 +333,21 @@ mod tests {
             Some(json!("automatic_updates"))
         );
         assert_eq!(setting("setScreenEnabled", json!({"enabled": true})).map(|s| s.1), Some(json!("remote_screen")));
+        assert_eq!(
+            setting("setAssistants", json!({"enabled": true})),
+            Some((Event::SettingChanged, json!("cloud_assistants"), json!(true)))
+        );
+        assert_eq!(
+            props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
+            Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
+        );
+        let saved = props("setCloudUrl", &json!({"url": "https://relay.example.com"}));
+        assert_eq!(
+            saved.as_ref().map(|(e, p)| (*e, p["setting"].clone(), p["on"].clone())),
+            Some((Event::SettingChanged, json!("remote_access_url"), json!(true)))
+        );
+        assert!(!saved.unwrap().1.to_string().contains("relay.example.com"), "the URL is not a property");
+        assert_eq!(setting("setCloudUrl", json!({"url": "  "})).map(|s| s.2), Some(json!(false)));
 
         assert_eq!(
             props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),

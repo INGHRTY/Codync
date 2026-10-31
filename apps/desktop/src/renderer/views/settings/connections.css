@@ -1,0 +1,25 @@
+/* Settings → Hermes connections, and a cloud bot's editor. */
+.connections-row {
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  text-align: left;
+}
+.connections-row:hover {
+  background: var(--surface);
+}
+.connections-editor,
+.connections-confirm {
+  padding: 20px 22px 22px;
+}
+.connections-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+.connections-field .settings-field {
+  text-align: left;
+  font-size: var(--text-body);
+}

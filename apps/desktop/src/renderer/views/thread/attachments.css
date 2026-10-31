@@ -35,7 +35,8 @@
 }
 .attachment-file {
   padding: 8px 12px;
-  background: var(--bubble-user);
+  background: var(--chat-user);
+  color: var(--on-chat-user);
   border-radius: var(--radius-l);
 }
 .attachment-file-name {
@@ -54,6 +55,12 @@
   background: var(--bubble-agent);
   border-radius: var(--radius-l);
   max-width: 380px;
+}
+.file-card-image {
+  display: flex;
+  align-self: flex-start;
+  border-radius: var(--radius-m);
+  overflow: hidden;
 }
 .file-card-detail {
   overflow-wrap: anywhere;
