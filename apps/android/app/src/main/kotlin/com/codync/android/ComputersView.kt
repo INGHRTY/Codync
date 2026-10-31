@@ -188,7 +188,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
     }
 }
 
-private const val NETWORK_ICON = "point.3.connected.trianglepath.dotted"
+private const val NETWORK_ICON = "codync.network"
 
 /** How this phone reaches the computer: the short name on the row, the whole route in the menu. */
 @Composable private fun ConnectionRow(computer: Computer, store: AppStore) {

@@ -6,9 +6,9 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.33.5
+## 2.33.6
 ### zh-Hant
-- 用量上限現在標示已用比例，例如「已用 62%」，不會再誤以為是剩餘量。Antigravity 的 Gemini 上限改名為「Gemini 5h」與「Gemini 7d」。
+- 「網路」功能換上 Codync Network 自己的圖示，在電腦頁、電腦選單與網路畫面中都一樣。
 
 ### en-US
-- Usage limits now say how much is used, such as "62% used", so they no longer read as what's left. Antigravity's Gemini limits are now named "Gemini 5h" and "Gemini 7d".
+- Network now has its own Codync Network icon on the Computers screen, in the computer menu and on the Network screen.
