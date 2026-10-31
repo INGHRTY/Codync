@@ -30,6 +30,19 @@ jobs:
       REPO: ${{ github.repository }}
       NUMBER: ${{ inputs.issue || github.event.issue.number || github.event.pull_request.number }}
     steps:
+      - name: The Claude token this repository has
+        id: token
+        # A repository without the token (a personal copy, say) labels nothing instead of failing.
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not set: skipping the labels."
+          fi
+
       - name: Read the issue or pull request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,6 +58,7 @@ jobs:
           } > input.txt
 
       - name: Classify
+        if: steps.token.outputs.present == 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           SCHEMA: >-
@@ -81,6 +95,7 @@ jobs:
           jq -c .structured_output result.json
 
       - name: Apply labels
+        if: steps.token.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       package: ${{ steps.scope.outputs.package }}
+      signing: ${{ steps.signing.outputs.present }}
     defaults:
       run:
         working-directory: apps/desktop
@@ -64,12 +65,37 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Signing secrets this repository has
+        id: signing
+        # A repository without the Apple credentials (a personal copy, say) skips the Mac job instead of
+        # failing at `security import`; the Windows and Linux jobs still build.
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          missing=()
+          [ -n "$APPLE_CERTIFICATE_P12" ] || missing+=("APPLE_CERTIFICATE_P12")
+          [ -n "$APPLE_CERTIFICATE_PASSWORD" ] || missing+=("APPLE_CERTIFICATE_PASSWORD")
+          [ -n "$ASC_KEY_ID" ] || missing+=("ASC_KEY_ID")
+          [ -n "$ASC_ISSUER_ID" ] || missing+=("ASC_ISSUER_ID")
+          [ -n "$ASC_PRIVATE_KEY" ] || missing+=("ASC_PRIVATE_KEY")
+          [ -n "$SPARKLE_PRIVATE_KEY" ] || missing+=("SPARKLE_PRIVATE_KEY")
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Apple signing secrets (${missing[*]}): skipping the Mac job."
+          fi
 
   macos:
     needs: check
     # Fork PRs get no signing secrets, so they stop at check, Windows and Linux; the release PR into main
-    # builds the Mac app before the tag.
-    if: needs.check.outputs.package == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    # builds the Mac app before the tag. A repository without the Apple credentials skips it too.
+    if: needs.check.outputs.package == 'true' && needs.check.outputs.signing == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
