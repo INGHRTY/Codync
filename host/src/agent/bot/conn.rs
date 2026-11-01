@@ -70,6 +70,11 @@ enum Transport {
     Gateway(Gateway),
 }
 
+/// The exact prompt a card answers, when the event named one (an authority gateway refuses without it).
+fn request_of(id: &Value) -> Option<&str> {
+    id["request"].as_str().filter(|request| !request.is_empty())
+}
+
 pub(crate) struct Conn {
     transport: Transport,
     pub(crate) sessions: SessionCaps,
@@ -151,6 +156,22 @@ impl Conn {
         }
     }
 
+    /// The gateway run the current turn is on, which the host records to settle it after a restart.
+    pub(crate) fn current_run(&self) -> Option<String> {
+        match &self.transport {
+            Transport::Gateway(g) => g.current_run(),
+            Transport::Acp { .. } => None,
+        }
+    }
+
+    /// Settles a run the previous host process started (see `Gateway::settle`); an ACP turn has no such run.
+    pub(crate) async fn settle_run(&self, run: &str) -> Result<()> {
+        match &self.transport {
+            Transport::Gateway(g) => g.settle(run).await,
+            Transport::Acp { .. } => Ok(()),
+        }
+    }
+
     /// Stops the agent and what it started. A gateway's sessions are durable there, so nothing stops.
     pub(crate) async fn kill(&self) {
         if let Transport::Acp { acp, .. } = &self.transport {
@@ -206,7 +227,7 @@ impl Conn {
             Transport::Gateway(g) => {
                 let run = id["run"].as_str().unwrap_or_default();
                 let choice = result["outcome"]["optionId"].as_str().unwrap_or("deny");
-                g.approve(run, choice).await
+                g.approve(run, choice, request_of(&id), id["generation"].as_u64()).await
             }
         }
     }
@@ -216,7 +237,9 @@ impl Conn {
             Transport::Acp { acp, .. } => acp.respond_error(id, code, message).await,
             // A card the user dismissed: Hermes resolves a run's approval with a deny.
             Transport::Gateway(g) => match id["run"].as_str() {
-                Some(run) if !run.is_empty() => g.approve(run, "deny").await,
+                Some(run) if !run.is_empty() => {
+                    g.approve(run, "deny", request_of(&id), id["generation"].as_u64()).await
+                }
                 _ => Ok(()),
             },
         }

@@ -1,8 +1,9 @@
 # Hermes frontend: cloud + local bots in one room
 
-Status: **Phases 1–5, 6 and 7 landed**, phases 1–2 verified live against the user's VPS (2026-10-30),
-gateway images against it (2026-10-31), and Phase 5's Grok Bot side-by-side pass against the installed
-0.78.1 (2026-11-01). Decisions taken with the user on 2026-10-30.
+Status: **Phases 1–5, 6, 7 and 8 landed**, phases 1–2 verified live against the user's VPS (2026-10-30),
+gateway images against it (2026-10-31), Phase 5's Grok Bot side-by-side pass against the installed
+0.78.1 (2026-11-01), and Phase 8's run transport against the VPS (2026-11-01). Decisions taken with the
+user on 2026-10-30.
 
 Codync becomes the front end for Hermes: bots that run on the user's own VPS (Hermes `api_server`) and bots
 that run on this computer (`hermes acp`) sit in the same roster, the same group chats, and the same rooms.
@@ -12,7 +13,7 @@ that run on this computer (`hermes acp`) sit in the same roster, the same group 
 | Question | Answer |
 | --- | --- |
 | What is "cloud Hermes"? | The user's own VPS running Hermes with `API_SERVER_ENABLED`. Not Nous-hosted Hermes Cloud, not Hermes Desktop's `hermes serve` (`/api/ws`). |
-| Which transport? | Hermes' HTTP API: `POST /api/sessions`, `POST /api/sessions/{id}/chat/stream` (SSE), `POST /v1/runs/{id}/approval|steer|stop`, `GET /v1/models`, `GET /api/model/options`. ACP over SSH is **not** used: it needs `codync-host` on the VPS and can't reach Nous-hosted instances. |
+| Which transport? | Hermes' HTTP API: `POST /api/sessions`, a turn as a run (`POST /v1/runs`, `GET /v1/runs/{id}/events`, `GET /v1/runs/{id}`, `POST /v1/runs/{id}/approval|steer|stop`), `GET /v1/models`, `GET /api/model/options`. The session chat stream was used at first and replaced in Phase 8. ACP over SSH is **not** used: it needs `codync-host` on the VPS and can't reach Nous-hosted instances. |
 | Profiles | One Hermes profile per bot, **local and remote**. Local: `hermes -p <profile> acp`. Remote: `/p/<profile>/…` URL prefix with that profile's own `API_SERVER_KEY`. |
 | Appearance | Layout and interaction follow the installed Grok Bot 0.78.1 (measured, see [Grok Bot deltas](#grok-bot-deltas)). |
 
@@ -225,6 +226,50 @@ the names of the rest. Verified on the VPS (0.22.2) with a 96×96 red-and-white 
 
 `2.31.0` (minor: new methods + additive bot fields; no `minApp` bump). `after-change` workflow, merge into
 `dev`, e2e on macOS desktop with the user's VPS.
+
+### Phase 8 — A turn is a run
+
+Landed 2026-11-01. The session chat stream answers the turn, but it **interrupts the run when the client
+disconnects** (`_drain_session_stream_task_on_disconnect` in Hermes' `api_server`), so one dropped SSE lost
+the turn on the gateway too. `/v1/runs` is decoupled from its stream, so the host sends turns there:
+
+| Call | Shape |
+| --- | --- |
+| `POST /v1/runs` | `{input, session_id, instructions, model?}` → 202 `{run_id, status}`. `input` is the text, or `[{role:"user", content:[parts]}]` for a turn with images. |
+| `GET /v1/runs/{id}/events` | SSE. Each frame is `id: <seq>` plus `data: {"event": …, "seq": …, …}`; **the name is inside the payload, not on an `event:` line**. `Last-Event-ID` (or `?last_seq`) replays from there, then streams live; `: open` and `: stream closed` are comments. |
+| `GET /v1/runs/{id}` | `{status, output, error, usage, runtime, …}`; `queued`, `running`, `waiting_for_approval`, `completed`, `failed`, `cancelled`, `interrupted`. |
+| `POST /v1/runs/{id}/approval` | `{choice}`, plus `request_id` **and** `execution_generation` when the event named them — a gateway holding the run's authority refuses without both. |
+| `POST /v1/runs/{id}/stop` | Stop. |
+
+`capabilities()` now requires `run_submission`, `run_events_sse` and `run_status`, and says which one is missing.
+`gateway.rs::follow` streams a run, reattaching a dropped (or `run.queued`-closed) stream from the last `seq`
+applied with a growing pause. Whenever no stream answers it reads the run's status: a terminal status answers
+the turn, and a run the gateway still holds (`queued`, `running`, `waiting_for_approval`) keeps executing there,
+so the host waits for it instead of failing the turn (a link that stays down for 10 minutes with no status
+either ends it). A reply is delivered once: `output` adds only the tail the stream missed. The run id is recorded
+with the turn (`turn.run.<bot>`), so a host restart mid-turn stops a run the gateway still holds before sending
+the resume prompt, instead of a second run queueing behind the orphan.
+
+| Run event | Codync |
+| --- | --- |
+| `message.delta` | `EntryKind::Agent` (alongside the old `assistant.delta`) |
+| `message.interim` / `assistant.commentary` | `EntryKind::Thought` |
+| `reasoning.available` | dropped (it repeats the reply) |
+| `tool.started` / `tool.completed` / `tool.failed` | `EntryKind::Tool`, paired by `tool_call_id` (by name, first in first out, when absent); `tool.completed.preview` is the result |
+| `todo_list` result | `EntryKind::Plan` — the tray, and in the trace; `cancelled` steps read `[cancelled] …` and count as completed. The run stream caps `preview` at 500 characters, so the whole result is read from `GET /api/sessions/{id}/messages` on completion (the preview is only the fallback) |
+| `subagent.start` / `subagent.complete` | a `Subagent 1/2: goal` tool entry, completed or failed from its status |
+| `approval.request` | permission card, answered by run + `request_id`/`prompt_id` + `execution_generation` |
+| `run.queued` | no update of its own; the status is polled until the run is admitted |
+| `run.completed` | `final: true`, the reply from `output` when nothing streamed |
+| `run.failed` / `run.interrupted` / `run.cancelled` | error notice or cancelled turn, failed push |
+
+Verified live on the VPS (0.22.2) with one turn asking for a two-step `todo_list` plan, `df -h`, the plan marked
+done, and a `delegate_task` subagent: one attach, 22 frames, six tools with their results, the plan tray on both
+revisions, the subagent's `hello`, and `done` as the final reply. An eight-step plan (its result ~900 characters,
+well over the preview cap) rendered whole from the session transcript on both revisions, and an image turn
+answered `Checkerboard` for the attached PNG through the `{role:"user", content:[…]}` wrapper. The authority
+approval path (a hosted room's `session_authority`) is covered by unit tests only — a stock profile never raises
+that card; so are the queued/dropped-link waits and the restart settle.
 
 ## Grok Bot deltas
 

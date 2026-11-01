@@ -145,12 +145,7 @@ impl Actor {
         // A bot request or room turn isn't resumed after a host restart (the room that waited is gone): a request's
         // persisted notices are marked interrupted instead of silently repeating work. Nor is a call's opening (the
         // call is over). A reply turn is resumed.
-        self.set_inflight(
-            self.active_request.is_none()
-                && self.active_group.is_none()
-                && self.active_routine.is_none()
-                && !self.active_prompt,
-        );
+        self.set_inflight(self.resumable());
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
         let message = if from_user { entry_ids.iter().rev().find(typed).cloned() } else { None };
@@ -248,6 +243,7 @@ impl Actor {
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer =
             self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?.send("session/prompt", params).await?;
+        self.record_run();
         if !self.turn_memory_revision.is_empty()
             && let Err(error) = memory::mark_announced(&self.hub.store, &self.cfg.id, &sid, &self.turn_memory_revision)
         {
@@ -258,6 +254,27 @@ impl Actor {
             let _ = done_tx.send(answer.response().await.and_then(acp::codebuddy::prompt_result));
         });
         Ok(())
+    }
+
+    /// Whether a host restart resumes this turn: the user's own chat, not a room's, a request's or a routine
+    /// run's, whose notices carry the outcome themselves.
+    fn resumable(&self) -> bool {
+        self.active_request.is_none()
+            && self.active_group.is_none()
+            && self.active_routine.is_none()
+            && !self.active_prompt
+    }
+
+    /// Remembers the gateway run a resumable turn is on, so the next host process settles it instead of
+    /// starting a second run in the same session (`queue.rs::settle_lost_run`).
+    fn record_run(&self) {
+        if !self.resumable() {
+            return;
+        }
+        let Some(run) = self.conn.as_ref().and_then(Conn::current_run) else { return };
+        if let Err(error) = self.hub.store.kv_set(&super::gateway::run_key(&self.cfg.id), &run) {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the gateway run");
+        }
     }
 
     pub(super) fn finish_turn(&mut self, done: &Done) {

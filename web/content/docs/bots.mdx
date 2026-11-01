@@ -56,6 +56,7 @@ Then open the bot's settings and set **Runs on** to that gateway. A bot on a gat
 - can join group chats with this computer's bots, but can't be the lead bot, manage the team, or use this computer's connectors and skills;
 - sees the photos you attach to a message, in that message itself (up to 6 MB of images per turn, in PNG, JPEG, GIF or WebP). Other files stay on this computer: it is told their names and says it can't open them;
 - messages you, reacts, uses its own memory, asks other bots and runs its routines through Codync's tools over the network. Codync writes them into the bot's profile on the gateway the first time it connects, which needs that gateway's SSH host (or a profile key you saved yourself); a bot without either still answers, just without those tools. Files and artifacts of this computer, connectors, skills and computer use stay on this computer.
+- shows its work as it goes: each tool it runs with its result, the plan it keeps, and any subagent it delegates. The turn belongs to the gateway, so a dropped connection picks the answer back up instead of losing it.
 
 A cloud bot is marked with a cloud: on its avatar in the bot list, beside its name in a group chat, and as `[cloud]` in its row in the terminal UI. Gateways are only on the computer whose host has them: another computer sees its own list.
 

@@ -429,6 +429,7 @@ impl Actor {
     /// Grok Bot's upgrade resume: the previous host process stopped mid-turn, so
     /// the agent is told, in the same session, to finish without redoing steps.
     pub(super) async fn resume_interrupted(&mut self, lane: Lane, done_tx: &mpsc::UnboundedSender<Done>) {
+        self.settle_lost_run().await;
         self.set_inflight(false);
         let slot = self.slot();
         if self.session_for(slot.as_deref()).is_none() {
@@ -451,11 +452,37 @@ impl Actor {
         }
     }
 
+    /// A gateway run the previous host process started is settled before the resume: it may still be executing
+    /// the work the resume prompt would ask for again, and a second run would wait behind it in the session.
+    async fn settle_lost_run(&mut self) {
+        let Some(run) = self.hub.store.kv_get(&super::gateway::run_key(&self.cfg.id)) else { return };
+        if self.cfg.connection.is_some() {
+            let slot = self.slot();
+            match self.ensure_turn_session(slot.as_deref()).await {
+                Err(error) => {
+                    // The resume's own start reports the connection failure.
+                    tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't reach the gateway to settle its run");
+                }
+                Ok(()) => {
+                    if let Some(conn) = &self.conn
+                        && let Err(error) = conn.settle_run(&run).await
+                    {
+                        tracing::warn!(bot = %self.cfg.id, run = %run, error = format!("{error:#}"), "couldn't settle the gateway run");
+                    }
+                }
+            }
+        }
+    }
+
     /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]).
     pub(super) fn set_inflight(&self, on: bool) {
         let value = if on { now_ms().to_string() } else { String::new() };
         if let Err(error) = self.hub.store.kv_set(&inflight_key(&self.cfg.id), &value) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
+        }
+        // A turn that ended has no run left to settle after a restart.
+        if !on && let Err(error) = self.hub.store.kv_delete(&super::gateway::run_key(&self.cfg.id)) {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't clear the recorded gateway run");
         }
     }
 }
